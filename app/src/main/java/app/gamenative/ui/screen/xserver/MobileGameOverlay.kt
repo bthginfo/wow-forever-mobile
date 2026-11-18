@@ -14,8 +14,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChatBubbleOutline
 import androidx.compose.material.icons.filled.ContentPaste
-import androidx.compose.material.icons.filled.Dialpad
 import androidx.compose.material.icons.filled.Keyboard
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.SportsEsports
 import androidx.compose.material3.AlertDialog
@@ -25,7 +26,6 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -56,18 +56,11 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.DialogProperties
-import androidx.compose.ui.window.SecureFlagPolicy
-import app.gamenative.GameSessionService
-import app.gamenative.PluviaApp
 import app.gamenative.R
 import app.gamenative.externaldisplay.IMEInputReceiver
 import app.gamenative.ui.screen.wow.MobileDiagnosticsDialog
-import app.gamenative.ui.screen.wow.MobileLaunchDiagnostics
-import app.gamenative.ui.screen.wow.openBattleNetApp
 import com.winlator.xserver.XKeycode
 import kotlin.math.roundToInt
-import kotlinx.coroutines.launch
 
 private val overlayBackground = Color(0xEB191610)
 private val overlayBorder = Color(0xB2977846)
@@ -82,7 +75,6 @@ internal fun BoxScope.MobileGameOverlay(
     canPlayWithTouch: Boolean,
     loginFailed: Boolean,
     browserConnectionStalled: Boolean,
-    onRetryLogin: () -> Unit,
     onRetryBrowserLogin: () -> Unit,
 ) {
     if (!visible || receiver == null) return
@@ -100,20 +92,24 @@ internal fun BoxScope.MobileGameOverlay(
     val chatting = playing && controls.chatting
     val editor = controls.hudEditor.takeIf { playing }
     val editingControls = editor == MobileHudEditor.Controls
-    var showCode by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
     var showDiagnostics by remember { mutableStateOf(false) }
     var showSensitivity by remember { mutableStateOf(false) }
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    var openingBattleNet by remember { mutableStateOf(false) }
     val preferences = remember(context) { context.getSharedPreferences("forever_touch", Context.MODE_PRIVATE) }
+    var toolbarMinimized by remember(preferences) { mutableStateOf(preferences.getBoolean("toolbar_minimized", false)) }
     var positions by remember(preferences) { mutableStateOf(readMobileHudPositions(preferences)) }
     var draftPositions by remember { mutableStateOf(positions) }
     var sensitivity by remember(preferences) {
         mutableFloatStateOf(preferences.getFloat("camera_sensitivity", 1f).coerceIn(.55f, 1.8f))
     }
     SideEffect { controls.lookSensitivity = sensitivity }
+
+    val compactToolbar = toolbarMinimized && playing && !chatting && editor == null
+    fun setToolbarMinimized(minimized: Boolean) {
+        toolbarMinimized = minimized
+        preferences.edit().putBoolean("toolbar_minimized", minimized).apply()
+    }
 
     fun finishEditor(save: Boolean) {
         if (save && editingControls) {
@@ -128,23 +124,6 @@ internal fun BoxScope.MobileGameOverlay(
     fun finishChat(send: Boolean) {
         controls.closeChat(send)
         receiver.hideKeyboard()
-    }
-
-    fun openCompanion() {
-        if (openingBattleNet) return
-        receiver.hideKeyboard()
-        openingBattleNet = true
-        scope.launch {
-            try {
-                val session = PluviaApp.xEnvironment
-                if (session != null) GameSessionService.prepareForAppSwitch(context)
-                if (PluviaApp.xEnvironment === session && openBattleNetApp(context)) {
-                    MobileLaunchDiagnostics.battleNetAppOpened()
-                }
-            } finally {
-                openingBattleNet = false
-            }
-        }
     }
 
     val density = LocalDensity.current
@@ -164,9 +143,10 @@ internal fun BoxScope.MobileGameOverlay(
         val layout = remember(viewport, safeArea, activePositions) {
             MobileLayout.fit(viewport.width.toFloat(), viewport.height.toFloat(), left, right, bottom, top, activePositions)
         }
+        val toolbarSize = if (compactToolbar) with(density) { 48.dp.roundToPx().let { IntSize(it, it) } } else toolbar
         val defaultToolbar = Rect(
-            Offset(safeArea.center.x - toolbar.width / 2f, top + topMargin),
-            Size(toolbar.width.toFloat(), toolbar.height.toFloat()),
+            Offset(safeArea.center.x - toolbarSize.width / 2f, top + topMargin),
+            Size(toolbarSize.width.toFloat(), toolbarSize.height.toFloat()),
         )
         val toolbarBounds = safeArea.placeMobileHudElement(defaultToolbar, activePositions[MobileHudElement.Toolbar])
 
@@ -179,11 +159,11 @@ internal fun BoxScope.MobileGameOverlay(
             val toolbarModifier = if (playing && !chatting && safeArea.width > 0f) {
                 Modifier.align(Alignment.TopCenter)
                     .absoluteOffset {
-                        val centeredLeft = (viewport.width - toolbar.width) / 2f
+                        val centeredLeft = (viewport.width - toolbarSize.width) / 2f
                         IntOffset((toolbarBounds.left - centeredLeft).roundToInt(), toolbarBounds.top.roundToInt())
                     }
                     .widthIn(max = with(density) { safeArea.width.toDp() })
-                    .onSizeChanged { toolbar = it }
+                    .onSizeChanged { if (!compactToolbar) toolbar = it }
             } else {
                 Modifier.align(Alignment.TopCenter).safeDrawingPadding().padding(top = 5.dp)
                     .onSizeChanged { toolbar = it }
@@ -196,6 +176,12 @@ internal fun BoxScope.MobileGameOverlay(
                 shape = RoundedCornerShape(16.dp),
                 shadowElevation = 3.dp,
             ) {
+                if (compactToolbar) {
+                    IconButton(onClick = { setToolbarMinimized(false) }, modifier = Modifier.size(48.dp)) {
+                        Icon(Icons.Filled.KeyboardArrowDown, stringResource(R.string.mobile_expand_toolbar), tint = overlayAccent)
+                    }
+                    return@Surface
+                }
                 Row(
                     modifier = Modifier.padding(horizontal = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -228,15 +214,10 @@ internal fun BoxScope.MobileGameOverlay(
                     } else {
                         ToolbarText(R.string.keyboard, Icons.Filled.Keyboard, onClick = receiver::showKeyboard)
                         ToolbarText(R.string.mobile_paste, Icons.Filled.ContentPaste) { receiver.pasteFromClipboard() }
-                        ToolbarText(R.string.mobile_auth_code, Icons.Filled.Dialpad) {
-                            receiver.hideKeyboard()
-                            showCode = true
-                        }
-                        ToolbarText(R.string.mobile_open_battle_net, accent = true, onClick = ::openCompanion)
                     }
 
                     if (loginFailed && !playing && canPlayWithTouch) {
-                        ToolbarText(R.string.mobile_retry_login, accent = true, onClick = onRetryLogin)
+                        ToolbarText(R.string.mobile_retry_browser_login, accent = true, onClick = onRetryBrowserLogin)
                     }
                     if (canPlayWithTouch && !playing) {
                         ToolbarText(
@@ -249,15 +230,21 @@ internal fun BoxScope.MobileGameOverlay(
                         }
                     }
 
+                    if (playing && !chatting && editor == null) {
+                        IconButton(onClick = { setToolbarMinimized(true) }, modifier = Modifier.size(48.dp)) {
+                            Icon(Icons.Filled.KeyboardArrowUp, stringResource(R.string.mobile_collapse_toolbar))
+                        }
+                    }
+
                     if (!chatting) Box {
                         IconButton(onClick = { showMenu = true }, modifier = Modifier.size(44.dp), enabled = !editingControls) {
                             Icon(Icons.Filled.MoreVert, stringResource(R.string.mobile_more))
                         }
                         DropdownMenu(expanded = showMenu, onDismissRequest = { showMenu = false }) {
                             if (loginFailed && !playing && !canPlayWithTouch) {
-                                DropdownMenuItem(text = { Text(stringResource(R.string.mobile_retry_login)) }, onClick = {
+                                DropdownMenuItem(text = { Text(stringResource(R.string.mobile_retry_browser_login)) }, onClick = {
                                     showMenu = false
-                                    onRetryLogin()
+                                    onRetryBrowserLogin()
                                 })
                             }
                             if (playing) {
@@ -328,9 +315,6 @@ internal fun BoxScope.MobileGameOverlay(
         }
     }
 
-    if (showCode) {
-        AuthenticatorPad(receiver = receiver, onOpenBattleNet = ::openCompanion, onClose = { showCode = false })
-    }
     if (showDiagnostics) {
         MobileDiagnosticsDialog(onRetryBrowserLogin.takeIf { browserConnectionStalled && !playing }) {
             showDiagnostics = false
@@ -524,73 +508,4 @@ private fun BoxScope.MobileControlSurface(controls: MobileTouchControls, layout:
             ),
         )
     }
-}
-
-@Composable
-private fun AuthenticatorPad(receiver: IMEInputReceiver, onOpenBattleNet: () -> Unit, onClose: () -> Unit) {
-    var digits by remember { mutableStateOf("") }
-    var invalidClipboard by remember { mutableStateOf(false) }
-    AlertDialog(
-        onDismissRequest = onClose,
-        properties = DialogProperties(securePolicy = SecureFlagPolicy.SecureOn),
-        title = { Text(stringResource(R.string.mobile_auth_code)) },
-        text = {
-            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(7.dp)) {
-                    Text(
-                        if (digits.isEmpty()) stringResource(R.string.mobile_auth_hint) else digits,
-                        style = if (digits.isEmpty()) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.titleLarge,
-                    )
-                    TextButton(
-                        onClick = {
-                            val copied = receiver.clipboardText()?.filterNot(Char::isWhitespace)?.toString()
-                            invalidClipboard = copied.isNullOrEmpty() || copied.length > 12 || copied.any { it !in '0'..'9' }
-                            if (!invalidClipboard) digits = copied.orEmpty()
-                        },
-                    ) { Text(stringResource(R.string.mobile_paste)) }
-                    TextButton(onClick = onOpenBattleNet) { Text(stringResource(R.string.mobile_open_battle_net)) }
-                    if (invalidClipboard) Text(
-                        stringResource(R.string.mobile_no_digits),
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-                Column(Modifier.weight(1.15f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    for (row in listOf("123", "456", "789", " 0<")) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            for (digit in row) {
-                                if (digit == ' ') {
-                                    Spacer(Modifier.weight(1f))
-                                } else {
-                                    OutlinedButton(
-                                        modifier = Modifier.weight(1f),
-                                        onClick = {
-                                            if (digit == '<') digits = digits.dropLast(1)
-                                            else if (digits.length < 12) digits += digit
-                                            invalidClipboard = false
-                                        },
-                                        contentPadding = PaddingValues(0.dp),
-                                    ) {
-                                        Text(if (digit == '<') "⌫" else digit.toString())
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onClose) { Text(stringResource(android.R.string.cancel)) }
-        },
-        confirmButton = {
-            TextButton(
-                enabled = digits.isNotEmpty(),
-                onClick = {
-                    receiver.typeText(digits)
-                    digits = ""
-                    onClose()
-                },
-            ) { Text(stringResource(R.string.mobile_enter_code)) }
-        },
-    )
 }

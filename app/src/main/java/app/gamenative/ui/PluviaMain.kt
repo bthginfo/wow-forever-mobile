@@ -64,10 +64,7 @@ import app.gamenative.ui.enums.DialogType
 import app.gamenative.ui.enums.Orientation
 import app.gamenative.ui.model.MainViewModel
 import app.gamenative.ui.screen.PluviaScreen
-import app.gamenative.ui.screen.wow.BattleNetSignIn
-import app.gamenative.ui.screen.wow.GamePath
 import app.gamenative.ui.screen.wow.WoWForeverScreen
-import app.gamenative.ui.screen.wow.WowLoginMode
 import app.gamenative.ui.screen.wow.auth.BattleNetBrowserLogin
 import app.gamenative.ui.screen.wow.auth.BattleNetBrowserLoginHost
 import app.gamenative.ui.screen.xserver.XServerScreen
@@ -76,7 +73,6 @@ import app.gamenative.ui.util.LocalSnackbarHostController
 import app.gamenative.ui.util.SnackbarManager
 import app.gamenative.utils.ContainerUtils
 import com.winlator.core.StringUtils
-import java.io.File
 import java.security.SecureRandom
 import java.util.Locale
 import java.util.Date
@@ -118,8 +114,7 @@ fun PluviaMain(
 
 
     var gameBackAction by remember { mutableStateOf<() -> Unit?>({}) }
-    var loginRetryRequested by remember { mutableStateOf<WowLoginMode?>(null) }
-    var browserLoginRequested by rememberSaveable { mutableStateOf(false) }
+    var loginRetryRequested by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         viewModel.uiEvent.collect { event ->
@@ -268,7 +263,6 @@ fun PluviaMain(
                     text = state.bootingSplashText,
                     onAbort = {
                         BattleNetBrowserLogin.cancel()
-                        BattleNetSignIn.removeLoginFile(File(GamePath.load(context)))
                         viewModel.setLoadingDialogVisible(false)
                         viewModel.abortBoot()
                     },
@@ -284,14 +278,13 @@ fun PluviaMain(
                 composable(route = PluviaScreen.WoWLauncher.route) {
                     WoWForeverScreen(
                         onOpenLanguage = onOpenLanguage,
-                        onLaunch = { appId, loginMode ->
-                            browserLoginRequested = loginMode == WowLoginMode.BROWSER
+                        onLaunch = { appId ->
                             viewModel.setLaunchedAppId(appId)
                             viewModel.setOffline(true)
                             viewModel.launchApp(context, appId)
                         },
                         retryLoginRequested = loginRetryRequested,
-                        onLoginRetryHandled = { loginRetryRequested = null },
+                        onLoginRetryHandled = { loginRetryRequested = false },
                     )
                 }
                 /** Game Screen **/
@@ -313,8 +306,7 @@ fun PluviaMain(
                     XServerScreen(
                         appId = state.launchedAppId,
                         isOffline = xServerIsOffline,
-                        browserLogin = browserLoginRequested,
-                        onRetryLogin = { loginRetryRequested = it },
+                        onRetryBrowserLogin = { loginRetryRequested = true },
                         registerBackAction = { cb ->
                             Timber.d("registerBackAction called: $cb")
                             gameBackAction = cb
@@ -335,11 +327,9 @@ fun PluviaMain(
                         },
                         onExit = { onComplete ->
                             BattleNetBrowserLogin.cancel(preserveFailure = true)
-                            BattleNetSignIn.removeLoginFile(File(GamePath.load(context)))
                             viewModel.exitApp(context, state.launchedAppId, onComplete)
                         },
                         onGameLaunchError = { error ->
-                            BattleNetSignIn.removeLoginFile(File(GamePath.load(context)))
                             viewModel.onGameLaunchError(error)
                             scope.launch {
                                 msgDialogState = MessageDialogState(
@@ -355,7 +345,7 @@ fun PluviaMain(
                 }
             }
 
-            BattleNetBrowserLoginHost()
+            BattleNetBrowserLoginHost(launcherVisible = state.currentScreen == PluviaScreen.WoWLauncher && !state.showBootingSplash)
 
             if (snackbarController.rootOwnsHost) {
                 SnackbarHost(

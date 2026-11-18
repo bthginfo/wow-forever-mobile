@@ -109,7 +109,6 @@ import app.gamenative.ui.data.XServerState
 import app.gamenative.GameSessionService
 import app.gamenative.ui.screen.wow.LoginObservation
 import app.gamenative.ui.screen.wow.MobileLaunchDiagnostics
-import app.gamenative.ui.screen.wow.WowLoginMode
 import app.gamenative.ui.screen.wow.WowMachineIdentity
 import app.gamenative.ui.screen.wow.auth.BattleNetBrowserLogin
 import app.gamenative.ui.widget.PerformanceHudView
@@ -176,7 +175,6 @@ import com.winlator.xenvironment.XEnvironment
 import com.winlator.xenvironment.components.ALSAServerComponent
 import com.winlator.xenvironment.components.BionicProgramLauncherComponent
 import com.winlator.xenvironment.components.GlibcProgramLauncherComponent
-import com.winlator.xenvironment.components.GuestProgramLauncherComponent
 import com.winlator.xenvironment.components.NetworkInfoUpdateComponent
 import com.winlator.xenvironment.components.MicrophoneComponent
 import com.winlator.xenvironment.components.PulseAudioComponent
@@ -417,8 +415,7 @@ internal fun XServerScreen(
     onWindowMapped: ((Context, Window) -> Unit)? = null,
     onWindowUnmapped: ((Window) -> Unit)? = null,
     onGameLaunchError: ((String) -> Unit)? = null,
-    onRetryLogin: (WowLoginMode) -> Unit = {},
-    browserLogin: Boolean = false,
+    onRetryBrowserLogin: () -> Unit = {},
 ) {
     Timber.i("Starting up XServerScreen")
     val context = LocalContext.current
@@ -2276,15 +2273,12 @@ internal fun XServerScreen(
                             if (isExiting.get()) return@submit
                             val environment = setupXEnvironment(
                                 context,
-                                appId,
                                 xServerState,
                                 envVars,
                                 container,
                                 xServerView!!.getxServer(),
                                 containerVariantChanged,
                                 onGameLaunchError,
-                                isOffline,
-                                browserLogin,
                             )
                             PluviaApp.xEnvironment = environment
                             view.post {
@@ -2305,7 +2299,7 @@ internal fun XServerScreen(
                                 }
                             }
                         } catch (e: Exception) {
-                            if (browserLogin) BattleNetBrowserLogin.cancel(preserveFailure = true)
+                            BattleNetBrowserLogin.cancel(preserveFailure = true)
                             Timber.e(e, "Error during wine setup operations")
                             try {
                                 PluviaApp.xEnvironment?.stopEnvironmentComponents()
@@ -2759,9 +2753,9 @@ internal fun XServerScreen(
             )
         }
 
-        fun retryLogin(mode: WowLoginMode) {
+        fun retryBrowserLogin() {
             if (xServerView == null || isExiting.get()) return
-            onRetryLogin(mode)
+            onRetryBrowserLogin()
             onQuickMenuItemSelected(QuickMenuAction.EXIT_GAME)
         }
 
@@ -2772,8 +2766,7 @@ internal fun XServerScreen(
             canPlayWithTouch = !isPortrait && !areControlsVisible,
             loginFailed = loginObservation?.state?.phase == R.string.mobile_diagnostics_error,
             browserConnectionStalled = loginObservation?.browserStalled == true,
-            onRetryLogin = { retryLogin(WowLoginMode.MANUAL) },
-            onRetryBrowserLogin = { retryLogin(WowLoginMode.BROWSER) },
+            onRetryBrowserLogin = ::retryBrowserLogin,
         )
 
         QuickMenu(
@@ -3631,15 +3624,12 @@ private fun assignTaskAffinity(
 
 private fun setupXEnvironment(
     context: Context,
-    appId: String,
     xServerState: MutableState<XServerState>,
     envVars: EnvVars,
     container: Container?,
     xServer: XServer,
     containerVariantChanged: Boolean,
     onGameLaunchError: ((String) -> Unit)? = null,
-    offline: Boolean = false,
-    browserLogin: Boolean = false,
 ): XEnvironment {
     ProcessHelper.hardKillStaleWineProcesses()
 
@@ -3730,12 +3720,7 @@ private fun setupXEnvironment(
         val wow64Mode = container.isWoW64Mode
         guestProgramLauncherComponent.setContainer(container)
         guestProgramLauncherComponent.setWineInfo(xServerState.value.wineInfo)
-        val launchCommand = if (browserLogin) {
-            BattleNetBrowserLogin.start(context, container)
-        } else {
-            getWineStartCommand(context, appId, container, envVars, guestProgramLauncherComponent) +
-                (if (container.execArgs.isNotEmpty()) " " + container.execArgs else "")
-        }
+        val launchCommand = BattleNetBrowserLogin.start(context, container)
         val gameExecutable = "wine explorer /desktop=shell," + xServer.screenInfo + " " + launchCommand
         guestProgramLauncherComponent.guestExecutable = gameExecutable
         guestProgramLauncherComponent.isWoW64Mode = wow64Mode
@@ -3860,7 +3845,7 @@ private fun setupXEnvironment(
 
     val gameTerminationCallback = Callback<Int> { status ->
         if (isExiting.get()) return@Callback
-        val browserFailureReported = browserLogin && BattleNetBrowserLogin.guestExited()
+        val browserFailureReported = BattleNetBrowserLogin.guestExited()
         if (status != 0) {
             Timber.e("Guest program terminated with status: $status")
             MobileLaunchDiagnostics.guestExited(status, PluviaApp.isActivityInForeground, GameSessionService.isForeground)
@@ -3920,68 +3905,7 @@ private fun setupXEnvironment(
     )
     return environment
 }
-private fun getWineStartCommand(
-    context: Context,
-    appId: String,
-    container: Container,
-    envVars: EnvVars,
-    guestProgramLauncherComponent: GuestProgramLauncherComponent,
-): String {
-    val tempDir = File(container.getRootDir(), ".wine/drive_c/windows/temp")
-    FileUtils.clear(tempDir)
 
-    val executablePath = container.executablePath
-    if (executablePath.isEmpty()) {
-        return "winhandler.exe \"wfm.exe\""
-    }
-
-    var gameFolderPath: String? = null
-    for (drive in Container.drivesIterator(container.drives)) {
-        if (drive[0] == "A") {
-            gameFolderPath = drive[1]
-            break
-        }
-    }
-
-    val args = if (ContainerUtils.isAbsoluteWindowsPath(executablePath)) {
-        val driveLetter = executablePath.substring(0, 1).uppercase()
-        var driveHostPath: String? = null
-        for (drive in Container.drivesIterator(container.drives)) {
-            if (drive[0].uppercase() == driveLetter) {
-                driveHostPath = drive[1]
-                break
-            }
-        }
-        if (driveHostPath != null) {
-            val winSubPath = executablePath.substring(3).replace("\\", "/")
-            val winDir = winSubPath.substringBeforeLast("/", "")
-            val hostDir = File(driveHostPath, winDir)
-            if (hostDir.exists() && hostDir.isDirectory) {
-                guestProgramLauncherComponent.workingDir = hostDir
-            }
-        }
-        val isArm64 = executablePath.contains("ARM64", ignoreCase = true)
-        if (isArm64) {
-            if (executablePath.contains(" ")) "\"$executablePath\"" else executablePath
-        } else {
-            "winhandler.exe \"$executablePath\""
-        }
-    } else {
-        if (gameFolderPath == null) {
-            Timber.tag("XServerScreen").e("Could not find A: drive: $appId")
-            return "winhandler.exe \"wfm.exe\""
-        }
-
-        val executableDir = gameFolderPath + "/" + executablePath.substringBeforeLast("/", "")
-        guestProgramLauncherComponent.workingDir = File(executableDir)
-
-        val normalizedPath = executablePath.replace('/', '\\')
-        envVars.put("WINEPATH", "A:\\")
-        "\"A:\\${normalizedPath}\""
-    }
-
-    return if (args.contains("ARM64", ignoreCase = true)) args else "winhandler.exe $args"
-}
 private fun exit(
     winHandler: WinHandler?,
     frameRating: FrameRating?,

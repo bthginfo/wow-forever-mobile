@@ -18,11 +18,9 @@ import androidx.compose.material.icons.filled.AspectRatio
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Analytics
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.FolderOpen
-import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Public
@@ -94,14 +92,12 @@ import java.io.IOException
 
 private const val CONTAINER_ID = "wow_forever"
 
-internal enum class WowLoginMode { SAVED, MANUAL, BROWSER }
-
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun WoWForeverScreen(
-    onLaunch: (appId: String, loginMode: WowLoginMode) -> Unit,
+    onLaunch: (appId: String) -> Unit,
     onOpenLanguage: () -> Unit,
-    retryLoginRequested: WowLoginMode? = null,
+    retryLoginRequested: Boolean = false,
     onLoginRetryHandled: () -> Unit = {},
 ) {
     val context = LocalContext.current
@@ -112,10 +108,8 @@ internal fun WoWForeverScreen(
     var files by remember { mutableStateOf(GamePath.Status()) }
     var isLaunching by remember { mutableStateOf(false) }
     var launchJob by remember { mutableStateOf<Job?>(null) }
-    var hasSavedLogin by remember { mutableStateOf(BattleNetSignIn.load(context) != null) }
     var region by remember(gamePath, files) { mutableStateOf(GameRegion.current(context, gamePath)) }
     var resolution by remember { mutableStateOf(RenderResolution.current(context, gpu.screenSize)) }
-    var showLoginDialog by remember { mutableStateOf(false) }
     var statusText by remember { mutableStateOf("") }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var showStoragePermissionDialog by remember { mutableStateOf(false) }
@@ -218,12 +212,13 @@ internal fun WoWForeverScreen(
         statusText = ""
     }
 
-    fun launchGame(loginMode: WowLoginMode = if (files.isLegacyBeta) WowLoginMode.SAVED else WowLoginMode.BROWSER) {
+    fun launchGame() {
         if (isLaunching || isUpdating || files.isWrongGame) return
         if (!files.hasStorageAccess) {
             showStoragePermissionDialog = true
             return
         }
+        if (files.needsInstall) return
         versionCheckJob?.cancel()
         isLaunching = true
         errorMessage = null
@@ -233,14 +228,14 @@ internal fun WoWForeverScreen(
             try {
                 val screenSize = fitScreenSizeToWindow(context, resolution.size)
                 val containerId = withContext(Dispatchers.IO) {
-                    prepareLaunch(context, File(gamePath), gpu, screenSize, loginMode) { msg ->
+                    prepareLaunch(context, File(gamePath), gpu, screenSize) { msg ->
                         scope.launch(Dispatchers.Main) {
                             if (launchJob?.isActive == true) statusText = msg
                         }
                     }
                 }
                 statusText = context.getString(R.string.mobile_launcher_starting)
-                onLaunch(containerId, loginMode)
+                onLaunch(containerId)
             } catch (e: CancellationException) {
                 throw e
             } catch (_: StorageAccessDeniedException) {
@@ -249,7 +244,6 @@ internal fun WoWForeverScreen(
                 denyStorageAccess()
             } catch (e: Exception) {
                 Timber.e(e, "Error launching WoW Forever")
-                BattleNetSignIn.removeLoginFile(File(gamePath))
                 errorMessage = e.message ?: context.getString(R.string.mobile_launcher_start_failed)
                 statusText = context.getString(R.string.mobile_launcher_start_failed)
                 isLaunching = false
@@ -258,10 +252,10 @@ internal fun WoWForeverScreen(
     }
 
     LifecycleResumeEffect(retryLoginRequested) {
-        if (retryLoginRequested != null) {
+        if (retryLoginRequested) {
             onLoginRetryHandled()
             resetLaunch()
-            if (checkFiles()) launchGame(retryLoginRequested)
+            if (checkFiles()) launchGame()
         }
         onPauseOrDispose { }
     }
@@ -282,10 +276,7 @@ internal fun WoWForeverScreen(
     }
 
     DisposableEffect(Unit) {
-        val reset: (Any) -> Unit = {
-            resetLaunch()
-            BattleNetSignIn.removeLoginFile(File(gamePath))
-        }
+        val reset: (Any) -> Unit = { resetLaunch() }
         PluviaApp.events.on<AndroidEvent.ForceCloseApp, Unit>(reset)
         PluviaApp.events.on<AndroidEvent.GameSessionEnded, Unit>(reset)
         onDispose {
@@ -389,7 +380,6 @@ internal fun WoWForeverScreen(
             versionStatus = null
             if (checkFiles()) {
                 checkVersionStatus()
-                if (hasSavedLogin) launchGame()
             }
         }
     }
@@ -399,7 +389,6 @@ internal fun WoWForeverScreen(
         downloadGameFiles(context.getString(R.string.mobile_launcher_update_failed), { root, onStatus -> WowClientDownloader.updateGame(root, target, onStatus) }) {
             checkFiles()
             versionStatus = target.copy(isOutdated = false, localVersion = target.remoteVersion)
-            launchGame()
         }
     }
 
@@ -488,10 +477,6 @@ internal fun WoWForeverScreen(
                             ready = files.hasForever,
                         )
                         CheckItem(label = stringResource(R.string.mobile_launcher_storage_access), ready = files.hasStorageAccess)
-                        CheckItem(
-                            label = stringResource(if (hasSavedLogin) R.string.mobile_launcher_saved_login else R.string.mobile_launcher_optional_login),
-                            ready = hasSavedLogin || !files.isLegacyBeta,
-                        )
                         appUpdate?.let {
                             CheckItem(
                                 label = stringResource(R.string.mobile_launcher_app_build_update, BuildConfig.VERSION_NAME, it.version),
@@ -698,14 +683,24 @@ internal fun WoWForeverScreen(
                             text = if (files.isWrongGame) stringResource(R.string.mobile_launcher_requires_forever) else stringResource(R.string.mobile_launcher_play),
                             icon = Icons.Default.PlayArrow,
                             enabled = canPlay,
-                            onClick = { launchGame() },
+                            onClick = ::launchGame,
+                        )
+                    }
+
+                    if (canPlay && files.hasStorageAccess) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = stringResource(R.string.mobile_launcher_browser_login_hint),
+                            modifier = Modifier.fillMaxWidth(0.85f),
+                            fontSize = 12.sp,
+                            color = WowMuted,
+                            textAlign = TextAlign.Center,
                         )
                     }
 
                     Spacer(modifier = Modifier.height(10.dp))
 
-                    // Wraps onto a second line on narrow portrait phones, where a Row squeezed the last button's text
-                    // into one letter per line and hid the login option (#44).
+                    // Wrap the utility buttons on narrow portrait screens.
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterHorizontally),
                     ) {
@@ -724,20 +719,6 @@ internal fun WoWForeverScreen(
                                 addonPicker.launch(arrayOf("application/zip", "application/x-zip-compressed", "application/octet-stream"))
                             }
                         }
-                        LinkButton(
-                            text = stringResource(R.string.mobile_launcher_login),
-                            icon = Icons.Default.Key,
-                        ) {
-                            showLoginDialog = true
-                        }
-                        LinkButton(stringResource(R.string.mobile_open_battle_net), Icons.Default.Public) {
-                            openBattleNetApp(context)
-                        }
-                        if (canPlay && files.hasStorageAccess) {
-                            LinkButton(stringResource(R.string.mobile_direct_login), Icons.Default.PlayArrow) {
-                                launchGame(WowLoginMode.SAVED)
-                            }
-                        }
                         LinkButton(stringResource(R.string.mobile_diagnostics), Icons.Default.Analytics) {
                             showDiagnostics = true
                         }
@@ -745,18 +726,6 @@ internal fun WoWForeverScreen(
                             stringResource(R.string.language), Icons.Default.Language,
                             enabled = !isDownloadingAppUpdate, onClick = onOpenLanguage,
                         )
-                        if (hasSavedLogin) {
-                            if (canPlay && files.hasStorageAccess) {
-                                LinkButton(stringResource(R.string.mobile_manual_login), Icons.Default.PlayArrow) {
-                                    launchGame(WowLoginMode.MANUAL)
-                                }
-                            }
-                            LinkButton(stringResource(R.string.mobile_launcher_forget_login), Icons.Default.Delete) {
-                                BattleNetSignIn.forget(context)
-                                BattleNetSignIn.removeLoginFile(File(gamePath))
-                                hasSavedLogin = false
-                            }
-                        }
                     }
                 }
             }
@@ -766,17 +735,6 @@ internal fun WoWForeverScreen(
     }
 
     if (showDiagnostics) MobileDiagnosticsDialog { showDiagnostics = false }
-    if (showLoginDialog) {
-        BattleNetCredentialDialog(
-            onDismiss = { showLoginDialog = false },
-            onConfirm = { login ->
-                showLoginDialog = false
-                BattleNetSignIn.save(context, login)
-                hasSavedLogin = true
-            },
-        )
-    }
-
     if (showUpgradeDialog) {
         AlertDialog(
             onDismissRequest = { showUpgradeDialog = false },
@@ -1256,7 +1214,6 @@ private suspend fun prepareLaunch(
     gameRoot: File,
     gpu: GpuProfile,
     screenSize: String,
-    loginMode: WowLoginMode,
     onStatus: (String) -> Unit,
 ): String = launchLock.withLock {
     val region = GameRegion.current(context, gameRoot.path)
@@ -1265,7 +1222,6 @@ private suspend fun prepareLaunch(
     try {
         ensureGameConfig(gameRoot, screenSize, GameRegion.saved(context))
         installMobileAddon(context, gameRoot)
-        BattleNetSignIn.removeLoginFile(gameRoot)
     } catch (e: Exception) {
         if (e.isPermissionDenied()) throw StorageAccessDeniedException(e)
         throw e
@@ -1304,15 +1260,6 @@ private suspend fun prepareLaunch(
     }
     currentCoroutineContext().ensureActive()
     MobileLaunchDiagnostics.containerReady()
-    // Written last, so the password isn't on disk during the client download or container setup.
-    val login = if (loginMode == WowLoginMode.SAVED) BattleNetSignIn.load(context) else null
-    val loginMethod = when {
-        loginMode == WowLoginMode.BROWSER -> R.string.mobile_browser_login
-        login == null -> R.string.mobile_diagnostics_manual_login
-        BattleNetSignIn.prepareLoginFile(gameRoot, login) -> R.string.mobile_diagnostics_saved_login
-        else -> R.string.mobile_diagnostics_saved_login_unavailable
-    }
-    MobileLaunchDiagnostics.loginMethod(loginMethod)
     CONTAINER_ID
 }
 

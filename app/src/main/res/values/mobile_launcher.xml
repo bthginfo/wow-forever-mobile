@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="mobile_app_name" translatable="false">WoW Forever Mobile</string>
     <string name="mobile_app_language">App language</string>
     <string name="mobile_language_save_failed">Could not save the language. Try again.</string>
     <string name="mobile_launcher_edition">%1$s Edition</string>
@@ -11,8 +12,6 @@
     <string name="mobile_launcher_beta_info">Install info (%1$s · beta upgrade required)</string>
     <string name="mobile_launcher_product_info">Install info (%1$s · %2$s required)</string>
     <string name="mobile_launcher_storage_access">All files access</string>
-    <string name="mobile_launcher_saved_login">Direct Battle.net sign-in saved</string>
-    <string name="mobile_launcher_optional_login">Saved sign-in optional with browser login</string>
     <string name="mobile_launcher_app_build">App version · %1$s</string>
     <string name="mobile_launcher_app_build_update">App version · %1$s (%2$s available)</string>
     <string name="mobile_launcher_client_build">Client build · %1$s (up to date)</string>
@@ -44,8 +43,6 @@
     <string name="mobile_launcher_refresh">Refresh</string>
     <string name="mobile_launcher_location">Game folder</string>
     <string name="mobile_launcher_addon">Add-on</string>
-    <string name="mobile_launcher_login">Saved sign-in</string>
-    <string name="mobile_launcher_forget_login">Forget sign-in</string>
     <string name="mobile_launcher_beta_title">WoW Forever upgrade</string>
     <string name="mobile_launcher_beta_details">Upgrade this beta installation to the full release in %1$s next to Data/. The launcher reuses your game data and downloads about 100 MB for the new ARM64 client.\n\nIf you have already copied the full release, select its folder.</string>
     <string name="mobile_launcher_choose_folder">Choose folder</string>
@@ -92,16 +89,12 @@
     <string name="mobile_launcher_client_lookup">Finding client files…</string>
     <string name="mobile_launcher_file_download">Downloading %1$s (%2$d/%3$d)…</string>
     <string name="mobile_launcher_indexes">Syncing archive indexes (%1$d/%2$d)…</string>
-    <string name="mobile_saved_login_title">Saved Battle.net sign-in</string>
-    <string name="mobile_saved_login_details">These credentials are stored encrypted on this device for direct sign-in in WoW.</string>
-    <string name="mobile_login_email">Email</string>
-    <string name="mobile_login_password">Password</string>
     <string name="mobile_browser_error_timeout">Browser sign-in timed out. Try again.</string>
     <string name="mobile_browser_error_address">Battle.net sent an unsupported sign-in address. Start sign-in again.</string>
     <string name="mobile_browser_error_secure">The secure connection to the sign-in page could not be verified.</string>
     <string name="mobile_browser_error_loading">The sign-in page could not load. Check your connection and try again.</string>
     <string name="mobile_browser_error_response">Battle.net could not open the sign-in page. Try again later.</string>
-    <string name="mobile_browser_error_launch">The browser session could not start WoW. Try again or sign in directly from the launcher.</string>
+    <string name="mobile_browser_error_launch">The browser sign-in could not start WoW. Tap Play to try again.</string>
     <string name="mobile_browser_error_wine">The Wine helper stopped during sign-in. Details are in %1$s.</string>
     <string name="mobile_launcher_error_details">%1$s · %2$s</string>
     <string name="mobile_launcher_component_error">Could not install %1$s. Free internal storage · %2$d MB.</string>
@@ -110,4 +103,6 @@
     <string name="mobile_launcher_build_info_missing">%1$s is missing from %2$s. Copy it from your WoW installation.</string>
     <string name="mobile_launcher_arm64_install_failed">Could not install the ARM64 client.</string>
     <string name="mobile_launcher_prefix_cleanup_failed">Could not clean up the interrupted Wine setup.</string>
+    <string name="mobile_launcher_browser_login_hint">Battle.net sign-in opens in the browser when you start the game.</string>
+    <string name="mobile_browser_error_legacy_file">The launcher could not remove an old sign-in file from the game folder.</string>
 </resources>

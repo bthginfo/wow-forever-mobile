@@ -39,7 +39,6 @@ internal object MobileLaunchDiagnostics {
         val runtime: Long? = null,
         val container: Long? = null,
         val frame: Long? = null,
-        val loginMethod: Int? = null,
         val browserStep: BrowserStep? = null,
         val battleNetAppOpened: Boolean = false,
         val guestExit: GuestExit? = null,
@@ -78,12 +77,6 @@ internal object MobileLaunchDiagnostics {
     }
 
     @Synchronized
-    fun loginMethod(label: Int) {
-        val launch = lastLaunch ?: return
-        lastLaunch = launch.copy(loginMethod = label)
-    }
-
-    @Synchronized
     fun browserStep(@StringRes label: Int) {
         val launch = lastLaunch ?: return
         lastLaunch = launch.copy(browserStep = BrowserStep(label, SystemClock.elapsedRealtime() - launch.startElapsed))
@@ -106,7 +99,7 @@ internal object MobileLaunchDiagnostics {
         val connection = readConnection(launch)
         return LaunchReport(
             listOf(launch.runtime, launch.container, launch.frame), connection.state,
-            launch.region, launch.network, launch.loginMethod, launch.battleNetAppOpened, launch.guestExit,
+            launch.region, launch.network, launch.battleNetAppOpened, launch.guestExit,
             launch.browserStep?.label, connection.browserStalled,
         )
     }
@@ -157,7 +150,6 @@ internal data class LaunchReport(
     val login: LoginState,
     val region: GameRegion,
     val startNetwork: ConnectionSnapshot,
-    val loginMethod: Int?,
     val battleNetAppOpened: Boolean,
     val guestExit: GuestExit?,
     @StringRes val browserStep: Int?,
@@ -288,7 +280,6 @@ private fun formatDiagnostics(context: Context, elapsedSinceBoot: Long, data: La
     } else {
         val (timings, state) = data
         appendLine(context.getString(R.string.mobile_diagnostics_region, context.getString(data.region.label)))
-        data.loginMethod?.let { appendLine(context.getString(it)) }
         data.browserStep?.let { appendLine(context.getString(R.string.mobile_diagnostics_browser_step, context.getString(it))) }
         val network = currentNetwork(context)
         appendLine(context.getString(R.string.mobile_network_at_launch, context.getString(data.startNetwork.label)))

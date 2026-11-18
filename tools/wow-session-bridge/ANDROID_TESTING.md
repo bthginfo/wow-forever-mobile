@@ -35,7 +35,7 @@ read the Battle.net desktop app's stored credentials.
 - Use a test APK with this branch. Locally signed builds cannot update an
   official APK signed by another key. Preserve game files and avoid resetting a
   working installation just to compare identities.
-- Select **Sign in directly in WoW** to check the direct login path.
+- Open the launcher and verify that **Play World of Warcraft** explains how it opens Battle.net browser sign-in.
 - Select **Play** and complete Battle.net's own page. Confirm the game
   reaches character selection and its Connection.log reports `usedToken=true`.
 - At the second-factor prompt, select **Authenticator**, then return to WoW.

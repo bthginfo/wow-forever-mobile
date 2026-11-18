@@ -127,6 +127,24 @@ class BattleNetBrowserLoginTest {
     }
 
     @Test
+    fun browserLaunchRemovesFilesFromPriorSavedSignIn() {
+        val container = container("old-login")
+        val game = File(container.rootDir.parentFile, "game")
+        val files = listOf("_forever_", "_classic_beta_").flatMap { flavor ->
+            val directory = File(game, flavor).apply { mkdirs() }
+            listOf("login.txt", "login.txt.new", "login.txt.bak").map { name ->
+                File(directory, name).apply { writeText("legacy sign-in fixture") }
+            }
+        }
+
+        val command = BattleNetBrowserLogin.start(RuntimeEnvironment.getApplication(), container)
+
+        assertTrue(command.contains("-launcherlogin"))
+        assertTrue(files.none { it.exists() })
+        assertTrue(File(game, ".build.info").isFile)
+    }
+
+    @Test
     fun cancelRemovesThePrivateCapabilityAndClosesTheListener() {
         val container = container("cancelled")
         BattleNetBrowserLogin.start(RuntimeEnvironment.getApplication(), container)

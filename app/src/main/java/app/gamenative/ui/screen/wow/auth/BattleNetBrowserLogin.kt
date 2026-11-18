@@ -7,6 +7,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.window.DialogProperties
@@ -14,10 +15,10 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.gamenative.PluviaApp
 import app.gamenative.R
 import app.gamenative.events.AndroidEvent
-import app.gamenative.ui.screen.wow.BattleNetSignIn
 import app.gamenative.ui.screen.wow.GameRegion
 import app.gamenative.ui.screen.wow.MobileLaunchDiagnostics
 import app.gamenative.ui.screen.wow.WowClientDownloader
+import app.gamenative.ui.util.SnackbarManager
 import com.winlator.container.Container
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
@@ -37,7 +38,7 @@ import java.io.IOException
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicReference
 
-/** Opt-in browser authentication. Tokens never enter game files, arguments, preferences, or logs. */
+/** Browser authentication. Tokens never enter game files, arguments, preferences, or logs. */
 internal object BattleNetBrowserLogin {
     private const val ASSET = "wow-session-bridge.exe"
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -72,9 +73,16 @@ internal object BattleNetBrowserLogin {
             ?.get("Version")?.substringAfterLast('.')?.toIntOrNull()?.takeIf { it > 0 }
             ?: throw IOException("Cannot read the installed game build for browser login")
         val region = GameRegion.current(context, gameRoot.path)
-        BattleNetSignIn.removeLoginFile(gameRoot)
+        // An older launcher may have left a password file or an AtomicFile journal in shared storage.
+        for (flavor in listOf(WowClientDownloader.FLAVOR_DIR, WowClientDownloader.LEGACY_FLAVOR_DIR)) {
+            val directory = File(gameRoot, flavor)
+            for (name in listOf("login.txt", "login.txt.new", "login.txt.bak")) {
+                val file = File(directory, name)
+                if (file.isFile) file.delete()
+            }
+        }
         check(!File(gameRoot, "${WowClientDownloader.FLAVOR_DIR}/login.txt").exists()) {
-            "Remove the old login.txt before using browser login"
+            context.getString(R.string.mobile_browser_error_legacy_file)
         }
 
         val directory = File(container.rootDir, ".wine/drive_c/wow-session")
@@ -313,26 +321,30 @@ internal object BattleNetBrowserLogin {
 }
 
 @Composable
-internal fun BattleNetBrowserLoginHost() {
+internal fun BattleNetBrowserLoginHost(launcherVisible: Boolean) {
     val state by BattleNetBrowserLogin.ui.collectAsStateWithLifecycle()
     when (val current = state) {
         BattleNetBrowserLogin.Ui.Idle -> Unit
         is BattleNetBrowserLogin.Ui.Browser -> BattleNetWebDialog(current)
-        else -> AlertDialog(
+        is BattleNetBrowserLogin.Ui.Failed -> if (launcherVisible) {
+            LaunchedEffect(current) {
+                if (BattleNetBrowserLogin.ui.value === current) {
+                    BattleNetBrowserLogin.abort(current)
+                    SnackbarManager.show(current.text)
+                }
+            }
+        }
+        is BattleNetBrowserLogin.Ui.Waiting -> AlertDialog(
             onDismissRequest = { BattleNetBrowserLogin.abort(current) },
             properties = DialogProperties(
-                dismissOnBackPress = current is BattleNetBrowserLogin.Ui.Failed,
+                dismissOnBackPress = false,
                 dismissOnClickOutside = false,
             ),
             title = { Text(stringResource(R.string.mobile_browser_login)) },
-            text = { Text(when (current) {
-                is BattleNetBrowserLogin.Ui.Waiting -> stringResource(current.label)
-                is BattleNetBrowserLogin.Ui.Failed -> current.text
-                else -> ""
-            }) },
+            text = { Text(stringResource(current.label)) },
             confirmButton = {
                 TextButton(onClick = { BattleNetBrowserLogin.abort(current) }) {
-                    Text(stringResource(if (current is BattleNetBrowserLogin.Ui.Failed) android.R.string.ok else android.R.string.cancel))
+                    Text(stringResource(android.R.string.cancel))
                 }
             },
         )

@@ -38,15 +38,15 @@ android {
     }
 
     defaultConfig {
-        applicationId = "app.wowforever.mobile.touchhud"
+        applicationId = "app.wowforever.mobile.browser"
 
         minSdk = 26
 
         manifestPlaceholders["screenOrientation"] = "unspecified"
         buildConfigField("boolean", "XR_BUILD", "false")
 
-        versionCode = 258
-        versionName = "2.4.4-mobile.13"
+        versionCode = 259
+        versionName = "2.4.4-mobile.14"
 
         buildConfigField("boolean", "GOLD", "false")
         val iconValue = "@mipmap/ic_launcher"

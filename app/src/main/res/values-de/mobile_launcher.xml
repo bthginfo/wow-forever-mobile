@@ -11,8 +11,6 @@
     <string name="mobile_launcher_beta_info">Installationsinfo (%1$s · Beta-Upgrade erforderlich)</string>
     <string name="mobile_launcher_product_info">Installationsinfo (%1$s · %2$s erforderlich)</string>
     <string name="mobile_launcher_storage_access">Zugriff auf alle Dateien</string>
-    <string name="mobile_launcher_saved_login">Direkte Battle.net-Anmeldung gespeichert</string>
-    <string name="mobile_launcher_optional_login">Gespeicherte Anmeldung optional beim Browser-Login</string>
     <string name="mobile_launcher_app_build">App-Version · %1$s</string>
     <string name="mobile_launcher_app_build_update">App-Version · %1$s (%2$s verfügbar)</string>
     <string name="mobile_launcher_client_build">Client-Build · %1$s (aktuell)</string>
@@ -44,8 +42,6 @@
     <string name="mobile_launcher_refresh">Aktualisieren</string>
     <string name="mobile_launcher_location">Spielordner</string>
     <string name="mobile_launcher_addon">Add-on</string>
-    <string name="mobile_launcher_login">Anmeldung speichern</string>
-    <string name="mobile_launcher_forget_login">Anmeldung löschen</string>
     <string name="mobile_launcher_beta_title">Upgrade für WoW Forever</string>
     <string name="mobile_launcher_beta_details">Das Upgrade richtet die Vollversion in %1$s neben Data/ ein. Der Launcher verwendet die vorhandenen Spieldaten und lädt rund 100 MB für den neuen ARM64-Client.\n\nWähle den Ordner der Vollversion aus, wenn du sie bereits kopiert hast.</string>
     <string name="mobile_launcher_choose_folder">Ordner auswählen</string>
@@ -92,16 +88,12 @@
     <string name="mobile_launcher_client_lookup">Clientdateien werden gesucht …</string>
     <string name="mobile_launcher_file_download">%1$s wird geladen (%2$d/%3$d) …</string>
     <string name="mobile_launcher_indexes">Archivindizes werden abgeglichen (%1$d/%2$d) …</string>
-    <string name="mobile_saved_login_title">Gespeicherte Battle.net-Anmeldung</string>
-    <string name="mobile_saved_login_details">Die Zugangsdaten für die direkte Anmeldung in WoW werden verschlüsselt auf diesem Gerät gespeichert.</string>
-    <string name="mobile_login_email">E-Mail</string>
-    <string name="mobile_login_password">Passwort</string>
     <string name="mobile_browser_error_timeout">Die Browser-Anmeldung hat zu lange gedauert. Versuch es erneut.</string>
     <string name="mobile_browser_error_address">Battle.net hat eine unbekannte Anmeldeadresse gesendet. Starte die Anmeldung erneut.</string>
     <string name="mobile_browser_error_secure">Die sichere Verbindung zur Anmeldeseite konnte nicht geprüft werden.</string>
     <string name="mobile_browser_error_loading">Die Anmeldeseite konnte nicht geladen werden. Prüfe deine Verbindung und versuch es erneut.</string>
     <string name="mobile_browser_error_response">Battle.net konnte die Anmeldeseite nicht öffnen. Versuch es später erneut.</string>
-    <string name="mobile_browser_error_launch">WoW konnte mit der Browser-Sitzung nicht starten. Versuch es erneut oder melde dich im Launcher direkt in WoW an.</string>
+    <string name="mobile_browser_error_launch">WoW konnte nach der Browser-Anmeldung nicht starten. Tippe auf Spielen, um es erneut zu versuchen.</string>
     <string name="mobile_browser_error_wine">Der Wine-Helfer wurde während der Anmeldung beendet. Details stehen in %1$s.</string>
     <string name="mobile_launcher_error_details">%1$s · %2$s</string>
     <string name="mobile_launcher_component_error">%1$s konnte nicht installiert werden. Freier interner Speicher · %2$d MB.</string>
@@ -110,4 +102,6 @@
     <string name="mobile_launcher_build_info_missing">%1$s fehlt in %2$s. Kopiere die Datei aus deiner WoW-Installation.</string>
     <string name="mobile_launcher_arm64_install_failed">Der ARM64-Client konnte nicht installiert werden.</string>
     <string name="mobile_launcher_prefix_cleanup_failed">Die abgebrochene Wine-Installation konnte nicht aufgeräumt werden.</string>
+    <string name="mobile_launcher_browser_login_hint">Beim Spielstart öffnet sich die Battle.net-Anmeldung im Browser.</string>
+    <string name="mobile_browser_error_legacy_file">Eine alte Anmeldedatei konnte nicht aus dem Spielordner entfernt werden.</string>
 </resources>

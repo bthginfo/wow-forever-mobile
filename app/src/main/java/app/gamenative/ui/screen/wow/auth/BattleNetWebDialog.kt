@@ -46,6 +46,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import app.gamenative.GameSessionService
 import app.gamenative.R
+import app.gamenative.ui.screen.wow.MobileLaunchDiagnostics
 import app.gamenative.ui.screen.wow.openBattleNetApp
 import java.io.ByteArrayInputStream
 import java.util.concurrent.atomic.AtomicBoolean
@@ -97,7 +98,9 @@ internal fun BattleNetWebDialog(browser: BattleNetBrowserLogin.Ui.Browser) {
                                     if (BattleNetBrowserLogin.ui.value === browser &&
                                         lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)
                                     ) {
-                                        authenticatorUnavailable = !openBattleNetApp(context, notifyIfUnavailable = false)
+                                        val opened = openBattleNetApp(context, notifyIfUnavailable = false)
+                                        authenticatorUnavailable = !opened
+                                        if (opened) MobileLaunchDiagnostics.battleNetAppOpened()
                                     }
                                 } finally {
                                     switchingApps = false
