@@ -305,8 +305,13 @@ class MainActivity : ComponentActivity() {
         // Log.d("MainActivity", "Requested orientation: $requestedOrientation => ${Orientation.fromActivityInfoValue(requestedOrientation)}")
     }
 
+    override fun onMultiWindowModeChanged(isInMultiWindowMode: Boolean, newConfig: Configuration) {
+        super.onMultiWindowModeChanged(isInMultiWindowMode, newConfig)
+        applyImmersiveMode()
+    }
+
     private fun applyImmersiveMode() {
-        if (desiredSystemUiVisible) {
+        if (desiredSystemUiVisible || isInMultiWindowMode) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 window.setDecorFitsSystemWindows(true)
                 window.insetsController?.show(

@@ -11,6 +11,11 @@ class FitScreenSizeTest {
     }
 
     @Test
+    fun sixteenByTenTablet_usesFullAspectAtTheSelectedPixelBudget() {
+        assertEquals("1518x948", fitScreenSize("1600x900", 2560, 1600))
+    }
+
+    @Test
     fun foldInnerScreen_keepsPixelBudget() {
         assertEquals("1104x834", fitScreenSize("1280x720", 2448, 1848))
     }

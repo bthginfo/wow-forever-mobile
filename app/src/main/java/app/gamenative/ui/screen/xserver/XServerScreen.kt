@@ -66,6 +66,7 @@ import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.pointerInteropFilter
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
@@ -436,8 +437,10 @@ internal fun XServerScreen(
         context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
     }
 
-    // PluviaApp.events.emit(AndroidEvent.SetAppBarVisibility(false))
-    PluviaApp.events.emit(AndroidEvent.SetSystemUIVisibility(false))
+    var fullscreen by remember { mutableStateOf(PrefManager.mobileGameFullscreen) }
+    LaunchedEffect(fullscreen) {
+        PluviaApp.events.emit(AndroidEvent.SetSystemUIVisibility(!fullscreen))
+    }
 
     // seems to be used to indicate when a custom wine is being installed (intent extra "generate_wineprefix")
     // val generateWinePrefix = false
@@ -461,6 +464,7 @@ internal fun XServerScreen(
         ContainerUtils.getContainer(context, appId)
     }
     val activity = remember(context) { BrightnessManager.findActivity(context) }
+    val windowed = remember(activity, LocalConfiguration.current) { activity?.isInMultiWindowMode == true }
 
     DisposableEffect(activity) {
         onDispose {
@@ -1774,7 +1778,8 @@ internal fun XServerScreen(
 
     val isPortrait = container.isPortraitMode
     // var launchedView by rememberSaveable { mutableStateOf(false) }
-    Box(modifier = Modifier.fillMaxSize()) {
+    // Use the same drawable area for the game surface and its touch overlay.
+    Box(modifier = Modifier.fillMaxSize().systemBarsPadding()) {
         key(isPortrait) {
         AndroidView(
         modifier = Modifier
@@ -2764,6 +2769,11 @@ internal fun XServerScreen(
             receiver = imeInputReceiver,
             visible = !showQuickMenu && !isEditMode && !showElementEditor,
             canPlayWithTouch = !isPortrait && !areControlsVisible,
+            fullscreen = fullscreen.takeUnless { windowed },
+            onToggleFullscreen = {
+                fullscreen = !fullscreen
+                PrefManager.mobileGameFullscreen = fullscreen
+            },
             loginFailed = loginObservation?.state?.phase == R.string.mobile_diagnostics_error,
             browserConnectionStalled = loginObservation?.browserStalled == true,
             onRetryBrowserLogin = ::retryBrowserLogin,

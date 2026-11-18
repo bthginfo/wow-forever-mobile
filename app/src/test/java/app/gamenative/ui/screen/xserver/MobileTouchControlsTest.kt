@@ -2,11 +2,13 @@ package app.gamenative.ui.screen.xserver
 
 import android.app.Application
 import android.content.Context
+import android.content.res.Configuration
 import android.view.InputDevice
 import android.view.MotionEvent
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import app.gamenative.externaldisplay.normalizeMobileChat
+import app.gamenative.ui.screen.wow.usesTabletLayout
 import com.winlator.widget.TouchpadView
 import com.winlator.xserver.Pointer
 import com.winlator.xserver.XKeycode
@@ -113,6 +115,56 @@ class MobileTouchControlsTest {
         bounds.forEachIndexed { index, control ->
             assertTrue(bounds.drop(index + 1).none(control::overlaps))
         }
+    }
+
+    @Test
+    fun tabletLayoutFollowsTheCurrentWindow() {
+        val configuration = Configuration().apply {
+            smallestScreenWidthDp = 800
+            screenWidthDp = 1280
+            screenHeightDp = 800
+        }
+        assertTrue(configuration.usesTabletLayout)
+
+        configuration.screenWidthDp = 560
+        assertFalse(configuration.usesTabletLayout)
+
+        configuration.screenWidthDp = 800
+        configuration.screenHeightDp = 1280
+        assertTrue(configuration.usesTabletLayout)
+    }
+
+    @Test
+    fun tabletThumbZonesKeepTheirSizeAndLeaveTheMiddleClear() {
+        val normal = MobileLayout.fit(2048f, 1280f, 40f, 30f, 48f, tabletDensity = 2f)
+        val large = MobileLayout.fit(2800f, 1920f, 40f, 30f, 48f, tabletDensity = 2f)
+
+        assertEquals(196f, normal.stick.width, .001f)
+        assertEquals(normal.stick.size, large.stick.size)
+        assertEquals(normal.camera.size, large.camera.size)
+        assertTrue(normal.stick.left >= 40f)
+        assertTrue(normal.camera.right <= 2018f)
+        assertTrue(normal.camera.bottom <= 1232f)
+
+        val target = normal.shortcuts.getValue(MobileShortcut.Target)
+        val interact = normal.shortcuts.getValue(MobileShortcut.Interact)
+        val jump = normal.shortcuts.getValue(MobileShortcut.Jump)
+        assertTrue(target.left >= normal.stick.right)
+        assertTrue(target.bottom <= interact.top)
+        assertTrue(interact.right < 600f)
+        assertTrue(jump.left > 1448f)
+        assertTrue(jump.right <= normal.camera.left)
+    }
+
+    @Test
+    fun tabletGeometryHonorsASavedJoystickPosition() {
+        val layout = MobileLayout.fit(
+            2048f, 1280f, 40f, 30f, 48f, 12f,
+            positions = mapOf(MobileHudElement.Movement to Offset(0f, 0f)),
+            tabletDensity = 2f,
+        )
+        assertEquals(Offset(40f, 12f), layout.stick.topLeft)
+        assertEquals(196f, layout.stick.width, .001f)
     }
 
     @Test

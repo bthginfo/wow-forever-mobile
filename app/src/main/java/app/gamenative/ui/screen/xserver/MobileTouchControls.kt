@@ -402,15 +402,35 @@ internal data class MobileLayout(val stick: Rect, val camera: Rect, val shortcut
             bottomInset: Float,
             topInset: Float = 0f,
             positions: Map<MobileHudElement, Offset> = emptyMap(),
+            tabletDensity: Float? = null,
         ): MobileLayout {
-            val usableWidth = (width - leftInset - rightInset).coerceAtLeast(0f)
-            val unit = minOf(height, usableWidth * .96f)
+            val safeArea = Rect(leftInset, topInset, width - rightInset, height - bottomInset)
+            val defaults = if (tabletDensity != null && !safeArea.isEmpty) {
+                forTablet(safeArea, tabletDensity)
+            } else {
+                forPhone(safeArea)
+            }
+            if (positions.isEmpty()) return defaults
+
+            fun place(element: MobileHudElement, bounds: Rect) =
+                safeArea.placeMobileHudElement(bounds, positions[element])
+
+            return MobileLayout(
+                stick = place(MobileHudElement.Movement, defaults.stick),
+                camera = place(MobileHudElement.Camera, defaults.camera),
+                shortcuts = defaults.shortcuts.mapValues { (shortcut, bounds) -> place(shortcut.element, bounds) },
+            )
+        }
+
+        private fun forPhone(safeArea: Rect): MobileLayout {
+            val usableWidth = safeArea.width.coerceAtLeast(0f)
+            val unit = minOf(safeArea.height.coerceAtLeast(0f), usableWidth * .96f)
             val margin = unit * .035f
             val gap = unit * .018f
             val diameter = unit * .178f
-            val left = leftInset + margin
-            val right = width - rightInset - margin
-            val bottom = height - bottomInset - margin
+            val left = safeArea.left + margin
+            val right = safeArea.right - margin
+            val bottom = safeArea.bottom - margin
             val cameraTop = bottom - unit * .17f
             val cameraLeft = right - minOf(unit * .42f, usableWidth * .26f)
             val jumpRight = cameraLeft - gap
@@ -418,26 +438,38 @@ internal data class MobileLayout(val stick: Rect, val camera: Rect, val shortcut
             val auxiliaryRight = jumpLeft - gap
             val auxiliaryLeft = auxiliaryRight - unit * .174f
             val auxiliaryHeight = (bottom - cameraTop - gap) / 2f
-            val safeArea = Rect(leftInset, topInset, width - rightInset, height - bottomInset)
-            fun place(element: MobileHudElement, bounds: Rect) =
-                safeArea.placeMobileHudElement(bounds, positions[element])
 
             return MobileLayout(
-                stick = place(MobileHudElement.Movement, Rect(left, bottom - diameter, left + diameter, bottom)),
-                camera = place(MobileHudElement.Camera, Rect(cameraLeft, cameraTop, right, bottom)),
+                stick = Rect(left, bottom - diameter, left + diameter, bottom),
+                camera = Rect(cameraLeft, cameraTop, right, bottom),
                 shortcuts = mapOf(
-                    MobileShortcut.Jump to place(
-                        MobileHudElement.Jump,
-                        Rect(jumpLeft, bottom - unit * .142f, jumpRight, bottom),
-                    ),
-                    MobileShortcut.Target to place(
-                        MobileHudElement.Target,
-                        Rect(auxiliaryLeft, cameraTop, auxiliaryRight, cameraTop + auxiliaryHeight),
-                    ),
-                    MobileShortcut.Interact to place(
-                        MobileHudElement.Interact,
-                        Rect(auxiliaryLeft, bottom - auxiliaryHeight, auxiliaryRight, bottom),
-                    ),
+                    MobileShortcut.Jump to Rect(jumpLeft, bottom - unit * .142f, jumpRight, bottom),
+                    MobileShortcut.Target to Rect(auxiliaryLeft, cameraTop, auxiliaryRight, cameraTop + auxiliaryHeight),
+                    MobileShortcut.Interact to Rect(auxiliaryLeft, bottom - auxiliaryHeight, auxiliaryRight, bottom),
+                ),
+            )
+        }
+
+        private fun forTablet(safeArea: Rect, density: Float): MobileLayout {
+            // Keep the thumb zones a consistent size in dp. Clamp while a window resize is being laid out.
+            val unit = minOf(density, safeArea.width / 500f, safeArea.height / 200f)
+            val left = safeArea.left + 20f * unit
+            val right = safeArea.right - 20f * unit
+            val bottom = safeArea.bottom - 20f * unit
+            val stickSize = 98f * unit
+            val cameraLeft = right - 148f * unit
+            val jumpRight = cameraLeft - 10f * unit
+            val jumpSize = 64f * unit
+            val auxiliaryLeft = left + stickSize + 10f * unit
+            val interact = Rect(auxiliaryLeft, bottom - 46f * unit, auxiliaryLeft + 92f * unit, bottom)
+
+            return MobileLayout(
+                stick = Rect(left, bottom - stickSize, left + stickSize, bottom),
+                camera = Rect(cameraLeft, bottom - 76f * unit, right, bottom),
+                shortcuts = mapOf(
+                    MobileShortcut.Jump to Rect(jumpRight - jumpSize, bottom - jumpSize, jumpRight, bottom),
+                    MobileShortcut.Target to interact.translate(0f, -54f * unit),
+                    MobileShortcut.Interact to interact,
                 ),
             )
         }

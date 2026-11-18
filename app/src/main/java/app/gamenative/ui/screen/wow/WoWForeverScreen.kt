@@ -1,8 +1,10 @@
 package app.gamenative.ui.screen.wow
 
 import android.content.Context
+import android.graphics.Insets
 import android.os.Build
 import android.os.Environment
+import android.view.WindowInsets as AndroidWindowInsets
 import android.view.WindowManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -33,6 +35,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
@@ -44,6 +47,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import app.gamenative.BuildConfig
 import app.gamenative.PluviaApp
+import app.gamenative.PrefManager
 import app.gamenative.R
 import app.gamenative.data.TouchGestureConfig
 import app.gamenative.events.AndroidEvent
@@ -61,6 +65,7 @@ import app.gamenative.ui.theme.WowMuted
 import app.gamenative.ui.theme.WowSubtle
 import app.gamenative.ui.util.SnackbarManager
 import app.gamenative.utils.AppUpdater
+import app.gamenative.utils.BrightnessManager
 import app.gamenative.utils.Net
 import app.gamenative.utils.StorageUtils
 import app.gamenative.utils.renderReleaseNotes
@@ -103,6 +108,7 @@ internal fun WoWForeverScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val gpu = remember { GpuProfile.detect(context) }
+    val tabletLayout = LocalConfiguration.current.usesTabletLayout
 
     var gamePath by remember { mutableStateOf(GamePath.load(context)) }
     var files by remember { mutableStateOf(GamePath.Status()) }
@@ -418,10 +424,13 @@ internal fun WoWForeverScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(Brush.verticalGradient(WowBackgroundGradient))
+            .safeDrawingPadding()
             .padding(24.dp)
     ) {
         Column(
             modifier = Modifier
+                .align(Alignment.TopCenter)
+                .then(if (tabletLayout) Modifier.widthIn(max = 720.dp) else Modifier)
                 .fillMaxSize()
                 .verticalScroll(scrollState),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -445,7 +454,13 @@ internal fun WoWForeverScreen(
                     color = WowGold
                 )
                 Spacer(modifier = Modifier.height(6.dp))
-                Text(text = stringResource(R.string.mobile_launcher_edition, gpu.edition), fontSize = 11.sp, color = WowSubtle)
+                val edition = stringResource(R.string.mobile_launcher_edition, gpu.edition)
+                Text(
+                    text = if (tabletLayout) stringResource(R.string.mobile_launcher_tablet_edition, edition) else edition,
+                    fontSize = 11.sp,
+                    color = WowSubtle,
+                    textAlign = TextAlign.Center,
+                )
             }
 
             Spacer(modifier = Modifier.height(20.dp))
@@ -1190,12 +1205,21 @@ private data class GpuProfile(val driver: String, val tuDebug: String, val scree
  * The pixel count stays the same as [baseSize], so GPU cost matches the 16:9 default.
  */
 private fun fitScreenSizeToWindow(context: Context, baseSize: String): String {
-    val (windowWidth, windowHeight) = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-        context.getSystemService(WindowManager::class.java).currentWindowMetrics.bounds.let { it.width() to it.height() }
-    } else {
-        context.resources.displayMetrics.let { it.widthPixels to it.heightPixels }
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+        val display = context.resources.displayMetrics
+        return fitScreenSize(baseSize, display.widthPixels, display.heightPixels)
     }
-    return fitScreenSize(baseSize, windowWidth, windowHeight)
+    val metrics = context.getSystemService(WindowManager::class.java).currentWindowMetrics
+    val width = metrics.bounds.width()
+    val height = metrics.bounds.height()
+    val windowed = BrightnessManager.findActivity(context)?.isInMultiWindowMode == true
+    // When starting fullscreen from portrait, the game rotates to landscape after this measurement.
+    val bars = if (windowed || (!PrefManager.mobileGameFullscreen && width >= height)) {
+        metrics.windowInsets.getInsetsIgnoringVisibility(AndroidWindowInsets.Type.systemBars())
+    } else {
+        Insets.NONE
+    }
+    return fitScreenSize(baseSize, width - bars.left - bars.right, height - bars.top - bars.bottom)
 }
 
 internal fun fitScreenSize(baseSize: String, windowWidth: Int, windowHeight: Int): String {

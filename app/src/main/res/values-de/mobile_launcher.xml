@@ -18,6 +18,7 @@
     <string name="mobile_launcher_path">Spielordner · %1$s</string>
     <string name="mobile_launcher_region">Region · %1$s</string>
     <string name="mobile_launcher_resolution">Auflösung · %1$s</string>
+    <string name="mobile_launcher_tablet_edition">%1$s · Tablet-Layout</string>
     <string name="mobile_region_americas">Amerika</string>
     <string name="mobile_region_europe">Europa</string>
     <string name="mobile_region_korea">Korea</string>

@@ -663,6 +663,8 @@
     <string name="mobile_play_controls">Spielen</string>
     <string name="mobile_login_controls">Eingabe</string>
     <string name="mobile_more">Weitere Funktionen</string>
+    <string name="mobile_enter_fullscreen">Vollbild aktivieren</string>
+    <string name="mobile_exit_fullscreen">Vollbild verlassen</string>
     <string name="mobile_collapse_toolbar">Menüleiste einklappen</string>
     <string name="mobile_expand_toolbar">Menüleiste ausklappen</string>
     <string name="mobile_game_menu">Spielmenü</string>

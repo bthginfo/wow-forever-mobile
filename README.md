@@ -1,8 +1,8 @@
 # WoW Forever Mobile
 
-## [⬇ Download Android APK](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.14/WoW-Forever-Mobile-2.4.4-mobile.14.apk)
+## [⬇ Download Android APK](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.15/WoW-Forever-Mobile-2.4.4-mobile.15.apk)
 
-**2.4.4-mobile.14 · Android 10+ · ARM64** · [Release notes](https://github.com/bthginfo/wow-forever-mobile/releases/tag/v2.4.4-mobile.14)
+**2.4.4-mobile.15 · Android 10+ · ARM64** · [Release notes](https://github.com/bthginfo/wow-forever-mobile/releases/tag/v2.4.4-mobile.15)
 
 An Android launcher and touch interface for Blizzard’s Windows ARM64 WoW Forever client. The launcher runs the client on the phone using Wine/Proton. It includes a browser-based Battle.net login, Android keyboard and clipboard controls, and a configurable in-game touch HUD.
 
@@ -20,14 +20,14 @@ This is an unofficial launcher for players with access to WoW Forever through th
 
 ## Requirements
 
-- A 64-bit Android phone or handheld with a Snapdragon 8-series SoC and an Adreno 7xx or 8xx GPU. The runtime is designed for Android 10 and later.
+- A 64-bit Android phone, tablet or handheld with a Snapdragon 8-series SoC and an Adreno 7xx or 8xx GPU. The runtime is designed for Android 10 and later.
 - Several GB of free internal space for the app and its Wine environment. The game folder can grow past 50 GB as it caches more data.
 - A Battle.net account with access to WoW Forever. Install the Battle.net Android app if you use its Authenticator.
 - Wi-Fi for the first download. A computer is optional for players who already have game files to copy.
 
 ## Install and set up
 
-1. **Install the APK.** Use **Download Android APK** above and open the downloaded file. If Android prompts for installation permission, allow installs from the browser or file manager you used. Version .14 installs as **WoW Forever Mobile** alongside the older **WoW Forever Touch** app. You can select the same game folder in step 4.
+1. **Install the APK.** Use **Download Android APK** above and open the downloaded file. If Android prompts for installation permission, allow installs from the browser or file manager you used. Version .15 updates **WoW Forever Mobile** .14 and carries over its app settings. For a fresh installation, continue with the setup below.
 2. **Choose your language.** Open **WoW Forever Mobile** and select **English** or **Deutsch**. You can change it later under **Language** in the launcher. The selection covers setup, the launcher’s login and connection UI, the touch toolbar, and the mobile skill editor. WoW and the Battle.net website manage the language of their own content.
 3. **Grant storage access.** The launcher asks for **All files access** so it can read and update the game folder on Android’s shared storage.
 4. **Set your game folder.** Use **Download and install** for a fresh setup. For files you already have, use **Find existing game files** and select their installation folder. The default is `/storage/emulated/0/WoW Forever/`.
@@ -53,7 +53,8 @@ The launcher downloads the matching `_forever_/Wow-ARM64.exe` from Blizzard when
 | --- | --- |
 | Left stick | Movement |
 | Right camera area | Drag to turn the camera |
-| Jump, Target, Interact | Right-side shortcuts |
+| Jump | Right-side shortcut |
+| Target, Interact | Right-side shortcuts on phones and left-side shortcuts in the tablet layout |
 | Chat | Opens chat with the Android keyboard. The chat toolbar includes Paste and Send. |
 | Bags, Map, Character | Opens the corresponding WoW panel |
 | Talents, Quests, Spellbook | Opens the corresponding WoW panel |
@@ -61,9 +62,16 @@ The launcher downloads the matching `_forever_/Wow-ARM64.exe` from Blizzard when
 | More controls → Edit controls | Moves the sticks, shortcuts, or toolbar |
 | More controls → Edit skills | Assigns spells and usable bag items, swaps slots by dragging, and moves the arcs by their handles |
 | More controls → Camera sensitivity | Sets how quickly the camera turns |
+| More controls → Enter or exit fullscreen | Hides or shows the Android status and navigation bars |
 | More controls → Text input | Opens the Android keyboard and paste controls for the game |
 
 The touch overlay translates Android gestures into keyboard and mouse input for the game window. Forever Touch reads populated action slots and keeps a per-character mobile layout in its own add-on saved variables. Use **Edit skills** to set up the mobile spell and item buttons.
+
+### Tablets and fullscreen
+
+The app selects the tablet layout when both dimensions of the app window are at least 600 dp. Movement, Target and Interact sit at the bottom left. Camera and Jump sit at the bottom right. A smaller split-screen window uses the compact phone layout. Use **Edit controls** to adjust positions or **Default** to try the tablet defaults.
+
+Fullscreen is on by default. Open **More controls** in the game toolbar to enter or exit fullscreen. WoW fits the landscape window at the selected render budget when the session starts. If you resize the window during play, the game preserves its proportions. Start a new session to fit the new aspect ratio.
 
 ## Sign-in and connection
 
@@ -75,12 +83,12 @@ The touch overlay translates Android gestures into keyboard and mouse input for 
 
 - **Stuck on Connecting.** When the browser has handed off the session and WoW has recorded no response for about 35 seconds, open **Check connection** to view the last step or restart browser sign-in. Android devices with very long uptime can also hit a Wine timing issue. In that case, restart the phone and open the game again.
 - **Client files missing or out of date.** Check the selected **Region** and game folder, then use **Check game files** or install the offered client update. The launcher verifies client downloads against Blizzard’s manifests.
-- **Moving from version .13.** Open **WoW Forever Mobile** after installing .14, grant storage access and select your existing game folder. The new app prepares its own Wine runtime on first launch.
+- **Moving from version .13.** Install **WoW Forever Mobile** .15 alongside the older **WoW Forever Touch** app, grant storage access and select your existing game folder. The new app prepares its own Wine runtime on first launch.
 - **Performance varies by device.** Use a lower **Resolution** in the launcher when testing on a new GPU or when the frame rate drops. The first visit to a zone can take longer while the game downloads assets.
 
 ## Build from source
 
-Use JDK 17, Android SDK Platform 36, build-tools 35.0.0, and NDK 27.3.13750724. Point `local.properties` at your Android SDK.
+Use JDK 17, Android SDK Platform 36, build-tools 35.0.0, and NDK 27.3.13750724. Point `local.properties` at your Android SDK. For a fresh checkout, build the ARM64 Wine login helper into `app/src/main/assets/wow-session-bridge.exe`. [Helper build and test instructions](tools/wow-session-bridge/README.md)
 
 ```bash
 tools/fetch_components.sh
@@ -88,7 +96,7 @@ python3 tools/trim_proton_i386.py app/src/main/assets/bundled_components/proton-
 ./gradlew :app:assembleModernRelease :app:testModernReleaseUnitTest
 ```
 
-The APK is written to `app/build/outputs/apk/modern/release/`. The runtime download script verifies each component against `tools/components.sha256`. Build the ARM64 Wine login helper from source with an ARM64 MinGW toolchain if you change it. [Helper build and test instructions](tools/wow-session-bridge/README.md)
+The APK is written to `app/build/outputs/apk/modern/release/`. The runtime download script verifies each component against `tools/components.sha256`.
 
 A local release signing configuration can be provided in `app/keystores/keystore.properties`. Keep keystores and passwords outside version control. This release uses application ID `app.wowforever.mobile.browser`.
 
@@ -116,7 +124,7 @@ GameNative is a general game library with Steam, GOG, Epic, Amazon, EA and Rocks
 
 - **Standalone app:** the launcher uses its own Android application ID and Wine prefix.
 - **Launch flow:** tap **Play World of Warcraft** to start Battle.net browser sign-in. Press Back on the loading screen to return to the launcher.
-- **Pre-configured container:** bionic, Proton 11 ARM64EC, Turnip through the Vulkan wrapper, DXVK 2.4.1 aarch64, WINEESYNC off, all 8 cores, 1920x1080, and `G:` mapped to `/storage/emulated/0/WoW Forever`.
+- **Pre-configured container:** bionic, Proton 11 ARM64EC, Turnip through the Vulkan wrapper, DXVK 2.4.1 aarch64, WINEESYNC off, a render size fitted to the window, and `G:` mapped to `/storage/emulated/0/WoW Forever`.
 - **Native ARM64 launch:** GameNative wraps every Windows program in `winhandler.exe`, an x86-64 helper that needs x86 emulation. ARM64 executables now launch directly, so the game never goes through FEX, and the working directory is set from the mapped drive.
 - **Game file setup:** the launcher installs the client from Blizzard's CDN or upgrades a beta install in place, writes `_forever_/.flavor.info` and a basic `WTF/Config.wtf` if they're missing, forces `gxApi "D3D11"` (so a copied Mac config that says Metal can't break it), and refuses to start without `.build.info`.
 - **Package-name fixes:** several paths were hard-coded to `app.gamenative`: the bionic library path rewrite (`WINEMU_HOST_PKG` / `HOST_PKG`), the gamepad shared-memory files, the DXVK state cache and the default drives. The controller path was the reason controllers didn't work.

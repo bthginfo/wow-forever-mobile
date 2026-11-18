@@ -44,6 +44,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -59,6 +60,7 @@ import androidx.compose.ui.unit.sp
 import app.gamenative.R
 import app.gamenative.externaldisplay.IMEInputReceiver
 import app.gamenative.ui.screen.wow.MobileDiagnosticsDialog
+import app.gamenative.ui.screen.wow.usesTabletLayout
 import com.winlator.xserver.XKeycode
 import kotlin.math.roundToInt
 
@@ -73,6 +75,8 @@ internal fun BoxScope.MobileGameOverlay(
     receiver: IMEInputReceiver?,
     visible: Boolean,
     canPlayWithTouch: Boolean,
+    fullscreen: Boolean?,
+    onToggleFullscreen: () -> Unit,
     loginFailed: Boolean,
     browserConnectionStalled: Boolean,
     onRetryBrowserLogin: () -> Unit,
@@ -128,7 +132,9 @@ internal fun BoxScope.MobileGameOverlay(
 
     val density = LocalDensity.current
     val direction = LocalLayoutDirection.current
-    val insets = WindowInsets.safeDrawing
+    val tabletDensity = if (LocalConfiguration.current.usesTabletLayout) density.density else null
+    // XServerScreen pads both the renderer and overlay for visible system bars.
+    val insets = WindowInsets.safeDrawing.exclude(WindowInsets.systemBars)
     val left = insets.getLeft(density, direction).toFloat()
     val right = insets.getRight(density, direction).toFloat()
     val top = insets.getTop(density).toFloat()
@@ -140,8 +146,11 @@ internal fun BoxScope.MobileGameOverlay(
     Box(Modifier.matchParentSize().onSizeChanged { viewport = it }) {
         val activePositions = if (editingControls) draftPositions else positions
         val safeArea = Rect(left, top, viewport.width - right, viewport.height - bottom)
-        val layout = remember(viewport, safeArea, activePositions) {
-            MobileLayout.fit(viewport.width.toFloat(), viewport.height.toFloat(), left, right, bottom, top, activePositions)
+        val layout = remember(viewport, safeArea, activePositions, tabletDensity) {
+            MobileLayout.fit(
+                viewport.width.toFloat(), viewport.height.toFloat(), left, right, bottom, top,
+                positions = activePositions, tabletDensity = tabletDensity,
+            )
         }
         val toolbarSize = if (compactToolbar) with(density) { 48.dp.roundToPx().let { IntSize(it, it) } } else toolbar
         val defaultToolbar = Rect(
@@ -271,6 +280,13 @@ internal fun BoxScope.MobileGameOverlay(
                                 showMenu = false
                                 controls.tap(XKeycode.KEY_ESC)
                             })
+                            if (fullscreen != null) {
+                                val action = if (fullscreen) R.string.mobile_exit_fullscreen else R.string.mobile_enter_fullscreen
+                                DropdownMenuItem(text = { Text(stringResource(action)) }, onClick = {
+                                    showMenu = false
+                                    onToggleFullscreen()
+                                })
+                            }
                             DropdownMenuItem(text = { Text(stringResource(R.string.mobile_diagnostics)) }, onClick = {
                                 showMenu = false
                                 showDiagnostics = true

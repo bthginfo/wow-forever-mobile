@@ -737,6 +737,13 @@ object PrefManager {
             setPref(HIDE_STATUS_BAR_WHEN_NOT_IN_GAME, value)
         }
 
+    private val MOBILE_GAME_FULLSCREEN = booleanPreferencesKey("wow_game_fullscreen")
+    var mobileGameFullscreen: Boolean
+        get() = getPref(MOBILE_GAME_FULLSCREEN, true)
+        set(value) {
+            setPref(MOBILE_GAME_FULLSCREEN, value)
+        }
+
     // Whether to swap A↔B and X↔Y button icons to match Xbox controller layout.
     private val SWAP_FACE_BUTTONS = booleanPreferencesKey("swap_face_buttons")
     var swapFaceButtons: Boolean
