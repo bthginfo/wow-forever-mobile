@@ -99,8 +99,60 @@ class WowClientDownloaderTest {
 
         assertEquals("70862", WowClientDownloader.regionRow(rows, "Region", "kr")?.get("BuildId"))
         assertEquals("eu", WowClientDownloader.regionRow(rows, "Region", "EU")?.get("Region"))
-        assertEquals("us", WowClientDownloader.regionRow(rows, "Region", "cn")?.get("Region"))
+        assertNull(WowClientDownloader.regionRow(rows, "Region", "cn"))
+        assertEquals("us", WowClientDownloader.regionRow(rows, "Region", "cn", useMirror = true)?.get("Region"))
         assertNull(WowClientDownloader.regionRow(emptyList(), "Region", "us"))
+    }
+
+    @Test
+    fun buildMatchIncludesRegionAndCdnConfig() {
+        val row = mapOf(
+            "Branch" to "EU",
+            "Version" to TARGET.remoteVersion,
+            "Build Key" to TARGET.remoteBuildConfig,
+            "CDN Key" to TARGET.remoteCdnConfig,
+        )
+        assertEquals(true, WowClientDownloader.matchesBuild(row, TARGET.copy(region = "eu")))
+        assertEquals(false, WowClientDownloader.matchesBuild(row + ("CDN Key" to "0".repeat(32)), TARGET.copy(region = "eu")))
+        assertEquals(false, WowClientDownloader.matchesBuild(row, TARGET.copy(region = "us")))
+    }
+
+    @Test
+    fun failedWritePreservesTheExistingFile() {
+        val directory = tempFolder.newFolder("atomic")
+        val existing = File(directory, "Wow-ARM64.exe").apply { writeText("existing") }
+
+        val result = runCatching {
+            WowClientDownloader.writeAtomically(existing) { temp ->
+                temp.writeText("incomplete")
+                throw java.io.IOException("interrupted download")
+            }
+        }
+
+        assertEquals(true, result.isFailure)
+        assertEquals("existing", existing.readText())
+        assertEquals(listOf(existing.name), directory.list()?.toList())
+
+        WowClientDownloader.writeAtomically(existing) { it.writeText("verified") }
+        assertEquals("verified", existing.readText())
+    }
+
+    @Test
+    fun updatePublishesIntoTheActiveForeverRow() {
+        val buildInfo = File(tempFolder.newFolder("active"), ".build.info")
+        buildInfo.writeText(
+            "Branch!STRING:0|Active!DEC:1|Build Key!HEX:16|CDN Key!HEX:16|Tags!STRING:0|Version!STRING:0|Product!STRING:0\n" +
+                "us|0|old|old|Windows arm64 US? enUS text?|old|wowf\n" +
+                "eu|1|current|current|Windows arm64 EU? enUS text?|current|wowf\n" +
+                "kr|1|duplicate|duplicate|Windows arm64 KR? enUS text?|current|wowf\n",
+        )
+
+        WowClientDownloader.upsertBuildInfo(buildInfo, TARGET.copy(region = "eu"))
+
+        val lines = buildInfo.readLines()
+        assertEquals("us|0|old|old|Windows arm64 US? enUS text?|old|wowf", lines[1])
+        assertEquals("0", lines[3].split('|')[1])
+        assertEquals(TARGET.remoteBuildConfig, WowClientDownloader.readBuildInfo(buildInfo)?.get("Build Key"))
     }
 
     @Test

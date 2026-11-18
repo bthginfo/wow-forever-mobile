@@ -1,5 +1,7 @@
 package app.gamenative.ui.screen.wow
 
+import androidx.annotation.StringRes
+import app.gamenative.R
 import app.gamenative.utils.Net
 import okhttp3.Request
 import java.io.ByteArrayOutputStream
@@ -7,6 +9,9 @@ import java.io.File
 import java.io.IOException
 import java.io.OutputStream
 import java.nio.ByteBuffer
+import java.nio.file.AtomicMoveNotSupportedException
+import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.security.DigestOutputStream
 import java.security.MessageDigest
 import java.util.Locale
@@ -20,6 +25,10 @@ import javax.net.ssl.SSLException
 import timber.log.Timber
 
 object WowClientDownloader {
+    fun interface ProgressListener {
+        fun update(@StringRes message: Int, vararg args: Any)
+    }
+
     const val FLAVOR_DIR = "_forever_"
     const val EXE_NAME = "Wow-ARM64.exe"
     const val TARGET_PRODUCT = "wowf"
@@ -35,6 +44,8 @@ object WowClientDownloader {
     private const val DEFAULT_CDN_PATH = "tpr/wow"
     private val DEFAULT_CDN_HOSTS = listOf("level3.blizzard.com", "us.cdn.blizzard.com")
     private const val INDEX_DOWNLOAD_THREADS = 8
+    private const val PENDING_UPDATE = ".forever-mobile-client-update"
+    private val CONTENT_KEY = Regex("[0-9a-fA-F]{32}")
     private val BUILD_INFO_HEADER = listOf(
         "Branch!STRING:0", "Active!DEC:1", "Build Key!HEX:16", "CDN Key!HEX:16", "Install Key!HEX:16", "IM Size!DEC:4",
         "CDN Path!STRING:0", "CDN Hosts!STRING:0", "CDN Servers!STRING:0", "Tags!STRING:0", "Armadillo!STRING:0",
@@ -86,14 +97,8 @@ object WowClientDownloader {
             Timber.w("checkVersion: row has no Version")
             return null
         }
-        val localBuildKey = row["Build Key"] ?: run {
-            Timber.w("checkVersion: row has no Build Key")
-            return null
-        }
-
         val remote = fetchRemote(region, row) ?: return null
-        val isOutdated = localVersion != remote.remoteVersion ||
-            (remote.remoteBuildConfig.isNotBlank() && localBuildKey != remote.remoteBuildConfig)
+        val isOutdated = !matchesBuild(row, remote)
         Timber.i("checkVersion: localVersion=$localVersion, remoteVersion=${remote.remoteVersion}, isOutdated=$isOutdated")
         return remote.copy(localVersion = localVersion, isOutdated = isOutdated)
     }
@@ -108,7 +113,7 @@ object WowClientDownloader {
         }
         val remoteRow = regionRow(parsePsv(versions), "Region", region)
             ?: run {
-                Timber.w("fetchRemote: no remote row in $versions")
+                Timber.w("fetchRemote: no patch build for %s", region)
                 return null
             }
         val remoteVersion = remoteRow["VersionsName"] ?: remoteRow["VersionName"] ?: remoteRow["Version"]
@@ -117,15 +122,20 @@ object WowClientDownloader {
                 return null
             }
 
-        val cdns = runCatching { fetchText("$PATCH_URL/cdns") }.getOrNull()?.let(::parsePsv).orEmpty()
-        val cdnsRow = regionRow(cdns, "Name", region)
+        val buildKey = remoteRow["BuildConfig"]?.takeIf { CONTENT_KEY.matches(it) } ?: return null
+        val cdnKey = remoteRow["CDNConfig"]?.takeIf { CONTENT_KEY.matches(it) } ?: return null
+        val sameBuild = localRow != null && localRow["Version"] == remoteVersion &&
+            buildKey.equals(localRow["Build Key"], ignoreCase = true) && cdnKey.equals(localRow["CDN Key"], ignoreCase = true)
+        val cdns = if (sameBuild) emptyList()
+        else runCatching { fetchText("$PATCH_URL/cdns") }.getOrNull()?.let(::parsePsv).orEmpty()
+        val cdnsRow = regionRow(cdns, "Name", region, useMirror = true)
 
         return VersionCheckResult(
             localVersion = "",
             remoteVersion = remoteVersion,
             isOutdated = true,
-            remoteBuildConfig = remoteRow["BuildConfig"].orEmpty(),
-            remoteCdnConfig = remoteRow["CDNConfig"].orEmpty(),
+            remoteBuildConfig = buildKey,
+            remoteCdnConfig = cdnKey,
             remoteCdnHosts = (cdnsRow?.get("Hosts") ?: localRow?.get("CDN Hosts"))?.let(::splitHosts) ?: DEFAULT_CDN_HOSTS,
             remoteCdnPath = cdnsRow?.get("Path") ?: localRow?.get("CDN Path") ?: DEFAULT_CDN_PATH,
             remoteCdnServers = (cdnsRow?.get("Servers") ?: localRow?.get("CDN Servers"))?.let(::splitHosts).orEmpty(),
@@ -134,10 +144,28 @@ object WowClientDownloader {
     }
 
     // Realms only accept their own region's build, which can lag behind or run ahead of the US one after a patch.
-    internal fun regionRow(rows: List<Map<String, String>>, column: String, region: String): Map<String, String>? =
+    internal fun regionRow(
+        rows: List<Map<String, String>>,
+        column: String,
+        region: String,
+        useMirror: Boolean = false,
+    ): Map<String, String>? =
         rows.firstOrNull { it[column].equals(region, ignoreCase = true) }
-            ?: rows.firstOrNull { it[column].equals("us", ignoreCase = true) }
-            ?: rows.firstOrNull()
+            ?: if (useMirror) rows.firstOrNull { it[column].equals("us", ignoreCase = true) } ?: rows.firstOrNull() else null
+
+    internal fun matchesBuild(row: Map<String, String>, target: VersionCheckResult): Boolean =
+        row["Version"] == target.remoteVersion &&
+            target.remoteBuildConfig.equals(row["Build Key"], ignoreCase = true) &&
+            target.remoteCdnConfig.equals(row["CDN Key"], ignoreCase = true) &&
+            target.region.equals(row["Branch"], ignoreCase = true)
+
+    private fun updateMarker(root: File) = File(root, "$FLAVOR_DIR/$PENDING_UPDATE")
+
+    internal fun hasInterruptedUpdate(root: File): Boolean = updateMarker(root).exists()
+
+    private fun finishClientUpdate(root: File) {
+        Files.deleteIfExists(updateMarker(root).toPath())
+    }
 
     /**
      * Sets up the full-release client in [gameRoot]: an empty folder for a new install, or a beta install that is upgraded
@@ -145,8 +173,9 @@ object WowClientDownloader {
      * [BUILD_INFO] last, so an interrupted install is simply resumed the next time. Game assets that aren't on disk yet
      * are streamed from the CDN by the game client while playing.
      */
-    fun install(gameRoot: File, region: String, onStatus: (String) -> Unit) {
-        onStatus("Checking the latest World of Warcraft build...")
+    @Synchronized
+    fun install(gameRoot: File, region: String, onStatus: ProgressListener) {
+        onStatus.update(R.string.mobile_launcher_build_check)
         val target = fetchRemote(region) ?: throw IOException("Couldn't reach Blizzard's patch server. Check your connection.")
         check(target.remoteBuildConfig.isNotBlank()) { "Blizzard's patch server returned no build" }
         listOf("Data/data", "Data/indices", "Data/config").forEach { File(gameRoot, it).mkdirs() }
@@ -163,12 +192,13 @@ object WowClientDownloader {
         runCatching { legacy.copyRecursively(residency) }.onFailure { Timber.w(it, "Couldn't copy the beta residency data") }
     }
 
-    fun updateGame(gameRoot: File, target: VersionCheckResult, onStatus: (String) -> Unit) {
+    @Synchronized
+    fun updateGame(gameRoot: File, target: VersionCheckResult, onStatus: ProgressListener) {
         val cdn = Cdn(
             servers = httpsServers(target.remoteCdnServers, target.remoteCdnHosts),
             path = target.remoteCdnPath.ifEmpty { DEFAULT_CDN_PATH },
         )
-        onStatus("Fetching build ${target.remoteVersion} manifest...")
+        onStatus.update(R.string.mobile_launcher_build_fetch, target.remoteVersion)
         val buildConfigRaw = cdn.require("config", target.remoteBuildConfig)
         val cdnConfigRaw = target.remoteCdnConfig.takeIf { it.isNotBlank() }?.let { cdn.require("config", it) }
 
@@ -185,11 +215,25 @@ object WowClientDownloader {
             onStatus = onStatus,
         )
 
-        onStatus("Updating build information...")
+        onStatus.update(R.string.mobile_launcher_build_save)
         upsertBuildInfo(File(gameRoot, BUILD_INFO), target)
+        finishClientUpdate(gameRoot)
     }
 
-    fun download(gameRoot: File, region: String, onStatus: (String) -> Unit) {
+    @Synchronized
+    fun repair(gameRoot: File, region: String, onStatus: ProgressListener): VersionCheckResult {
+        onStatus.update(R.string.mobile_launcher_region_check)
+        val target = checkVersion(gameRoot, region) ?: throw IOException("Could not verify the $region build with Blizzard.")
+        updateGame(gameRoot, target, onStatus)
+        return target.copy(localVersion = target.remoteVersion, isOutdated = false)
+    }
+
+    @Synchronized
+    fun download(gameRoot: File, region: String, onStatus: ProgressListener) {
+        if (hasInterruptedUpdate(gameRoot)) {
+            repair(gameRoot, region, onStatus)
+            return
+        }
         val row = activeBuild(File(gameRoot, BUILD_INFO))
         check(row["Product"] == TARGET_PRODUCT) { "Incompatible game product: ${row["Product"]}. Expected $TARGET_PRODUCT." }
         val latest = checkVersion(gameRoot, region)
@@ -199,7 +243,7 @@ object WowClientDownloader {
             servers = httpsServers(row["CDN Servers"].orEmpty().let(::splitHosts), row["CDN Hosts"].orEmpty().let(::splitHosts)),
             path = row.getValue("CDN Path"),
         )
-        onStatus("Reading build ${row["Version"].orEmpty()} manifest...")
+        onStatus.update(R.string.mobile_launcher_build_read, row["Version"].orEmpty())
         syncClient(
             gameRoot = gameRoot,
             cdn = cdn,
@@ -209,6 +253,7 @@ object WowClientDownloader {
             },
             onStatus = onStatus,
         )
+        finishClientUpdate(gameRoot)
     }
 
     private fun syncClient(
@@ -216,45 +261,48 @@ object WowClientDownloader {
         cdn: Cdn,
         buildConfig: Map<String, List<String>>,
         archives: Lazy<ArchiveLocator?>,
-        onStatus: (String) -> Unit,
+        onStatus: ProgressListener,
     ) {
         val files = parseInstall(blteDecode(cdn.require("data", buildConfig.getValue("install")[1]))).filter { it.isClientBinary() }
-        check(files.isNotEmpty()) { "No Windows ARM64 client files in this build" }
+        check(files.any { it.relativePath.equals(EXE_NAME, ignoreCase = true) }) { "No Windows ARM64 executable in this build" }
 
         val clientDir = File(gameRoot, FLAVOR_DIR)
+        onStatus.update(R.string.mobile_launcher_client_verify)
         val pending = files.filter { md5Hex(File(clientDir, it.relativePath)) != it.ckey }
         if (pending.isEmpty()) return
 
-        onStatus("Looking up client files...")
+        onStatus.update(R.string.mobile_launcher_client_lookup)
         val ekeys = EncodingLookup(cdn, buildConfig.getValue("encoding")[1]).find(pending.map { it.ckey }.toSet())
         pending.forEachIndexed { index, entry ->
-            onStatus("Downloading ${entry.name} (${index + 1}/${pending.size})...")
+            onStatus.update(R.string.mobile_launcher_file_download, entry.name, index + 1, pending.size)
             val ekey = ekeys[entry.ckey] ?: throw IOException("${entry.name} is missing from the encoding table")
             val encoded = cdn.fetch("data", ekey) ?: archives.value?.read(ekey) ?: throw IOException("${entry.name} not found on the CDN")
-            writeVerified(File(clientDir, entry.relativePath), entry, encoded)
+            writeVerified(File(clientDir, entry.relativePath), entry, encoded) {
+                val marker = updateMarker(gameRoot)
+                if (!marker.exists()) writeAtomically(marker, ByteArray(0))
+            }
         }
     }
 
-    private fun writeVerified(dest: File, entry: InstallEntry, encoded: ByteArray) {
-        dest.parentFile?.mkdirs()
-        val temp = File(dest.parentFile, "${dest.name}.download")
-        val digest = MessageDigest.getInstance("MD5")
-        DigestOutputStream(temp.outputStream().buffered(), digest).use { blteDecode(encoded, it) }
-        if (hex(digest.digest(), 0, 16) != entry.ckey) {
-            temp.delete()
-            throw IOException("Checksum mismatch for ${entry.name}")
+    private fun writeVerified(dest: File, entry: InstallEntry, encoded: ByteArray, beforeReplace: () -> Unit) {
+        writeAtomically(dest) { temp ->
+            val digest = MessageDigest.getInstance("MD5")
+            DigestOutputStream(temp.outputStream().buffered(), digest).use { blteDecode(encoded, it) }
+            if (hex(digest.digest(), 0, 16) != entry.ckey) throw IOException("Checksum mismatch for ${entry.name}")
+            beforeReplace()
         }
-        dest.delete()
-        check(temp.renameTo(dest)) { "Could not write ${dest.path}" }
     }
 
     private fun saveConfig(gameRoot: File, key: String, bytes: ByteArray) =
         writeAtomically(File(gameRoot, "Data/config/${key.substring(0, 2)}/${key.substring(2, 4)}/$key"), bytes)
 
     // Patch archives and archive groups aren't needed to play: the former live under patch/, and the client builds the latter.
-    private fun syncIndices(gameRoot: File, cdn: Cdn, cdnConfig: Map<String, List<String>>, onStatus: (String) -> Unit) {
+    private fun syncIndices(gameRoot: File, cdn: Cdn, cdnConfig: Map<String, List<String>>, onStatus: ProgressListener) {
         val required = cdnConfig["archives"].orEmpty() + cdnConfig["file-index"].orEmpty()
-        val missing = required.distinct().filter { !File(gameRoot, "Data/indices/$it.index").isFile }
+        val missing = required.distinct().filter { hash ->
+            val index = File(gameRoot, "Data/indices/$hash.index")
+            !index.isFile || index.length() == 0L
+        }
         if (missing.isEmpty()) return
         val done = AtomicInteger()
         val pool = Executors.newFixedThreadPool(INDEX_DOWNLOAD_THREADS)
@@ -262,7 +310,7 @@ object WowClientDownloader {
             missing.map { hash ->
                 pool.submit {
                     cdn.fetch("data", "$hash.index")?.let { writeAtomically(File(gameRoot, "Data/indices/$hash.index"), it) }
-                    onStatus("Syncing archive indexes (${done.incrementAndGet()}/${missing.size})...")
+                    onStatus.update(R.string.mobile_launcher_indexes, done.incrementAndGet(), missing.size)
                 }
             }.forEach { it.get() }
         } catch (e: ExecutionException) {
@@ -272,12 +320,21 @@ object WowClientDownloader {
         }
     }
 
-    private fun writeAtomically(dest: File, bytes: ByteArray) {
+    private fun writeAtomically(dest: File, bytes: ByteArray) = writeAtomically(dest) { it.writeBytes(bytes) }
+
+    internal fun writeAtomically(dest: File, write: (File) -> Unit) {
         dest.parentFile?.mkdirs()
-        val temp = File(dest.parentFile, "${dest.name}.download")
-        temp.writeBytes(bytes)
-        dest.delete()
-        check(temp.renameTo(dest)) { "Could not write ${dest.path}" }
+        val temp = File.createTempFile("wow-", ".download", dest.parentFile)
+        try {
+            write(temp)
+            try {
+                Files.move(temp.toPath(), dest.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+            } catch (_: AtomicMoveNotSupportedException) {
+                if (!temp.renameTo(dest)) throw IOException("Could not replace ${dest.name}")
+            }
+        } finally {
+            temp.delete()
+        }
     }
 
     /**
@@ -300,10 +357,12 @@ object WowClientDownloader {
         ).filterValues { it.isNotBlank() }
 
         val rows = lines.drop(1).map { line -> header.zip(line.split("|")).toMap() }
-        val existing = rows.indexOfFirst { it["Product"] == TARGET_PRODUCT }
+        val existing = rows.indexOfFirst { it["Product"] == TARGET_PRODUCT && it["Active"] == "1" }
+            .takeIf { it >= 0 } ?: rows.indexOfFirst { it["Product"] == TARGET_PRODUCT }
         val updated = if (existing >= 0) {
             rows.mapIndexed { idx, row ->
                 when {
+                    idx != existing && row["Product"] == TARGET_PRODUCT && row["Active"] == "1" -> row + ("Active" to "0")
                     idx != existing -> row
                     target.region.isBlank() -> row + updates
                     else -> row + regionColumns(target.region, row["Tags"]) + updates
@@ -500,7 +559,7 @@ object WowClientDownloader {
         fun read(ekey: String): ByteArray? {
             for (archive in archives) {
                 val local = File(gameRoot, "Data/indices/$archive.index")
-                val index = if (local.isFile) {
+                val index = if (local.isFile && local.length() > 0L) {
                     local.readBytes()
                 } else {
                     cdn.fetch("data", "$archive.index")?.also { writeAtomically(local, it) } ?: continue

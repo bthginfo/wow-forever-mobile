@@ -165,6 +165,7 @@ class MainViewModel @Inject constructor(
         PrefManager.hasAttemptedGameLaunch = true
         launchAppJob?.cancel()
         launchAppJob = viewModelScope.launch {
+            setBootingSplashText(context.getString(R.string.mobile_launcher_starting))
             setShowBootingSplash(true)
             PluviaApp.events.emit(AndroidEvent.SetAllowedOrientation(PrefManager.allowedOrientation))
 

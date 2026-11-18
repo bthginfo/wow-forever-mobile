@@ -47,8 +47,8 @@ object LocaleHelper {
         }
 
         val locale = getLocaleFromCode(languageCode)
-        Locale.setDefault(locale)
 
+        // The UI language belongs to this context. The device locale still determines the default game region.
         val config = Configuration(context.resources.configuration)
         config.setLocale(locale)
 

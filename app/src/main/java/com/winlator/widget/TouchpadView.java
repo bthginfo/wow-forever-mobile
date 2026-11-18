@@ -125,6 +125,7 @@ public class TouchpadView extends View implements View.OnCapturedPointerListener
     private float singleFingerLastRawX, singleFingerLastRawY;
     // Preserve transformed sub-pixel motion for the title-scoped relative-drag fix.
     private float relativeDragRemainderX, relativeDragRemainderY;
+    private float mobileLookRemainderX, mobileLookRemainderY;
     // Two-finger gesture mutual exclusion (only pan OR pinch, not both)
     private static final int TWO_FINGER_GESTURE_NONE = 0;
     private static final int TWO_FINGER_GESTURE_PAN = 1;
@@ -538,7 +539,7 @@ public class TouchpadView extends View implements View.OnCapturedPointerListener
         return true;
     }
 
-    void cancelTouchInput() {
+    public void cancelTouchInput() {
         cancelSimulatedTouchPress();
         cancelPointerButtonLeft(fingerPointerButtonLeft);
         cancelPointerButtonRight(fingerPointerButtonRight);
@@ -1280,26 +1281,7 @@ public class TouchpadView extends View implements View.OnCapturedPointerListener
 
         // Simple tap — only if finger stayed within tap tolerance
         if (gestureConfig.getTapEnabled() && !movedBeyondTapThreshold) {
-            if (delayedPress != null) {
-                // If there's a new single tap within 'CLICK_DELAYED_TIME' ms
-                // Immediately release the previous down click
-                removeCallbacks(delayedPress);
-                injectRelease(delayedPressAction);
-                delayedPressAction = null;
-            }
-            String tapAction = gestureConfig.getTapAction();
-            moveCursorTo((int) pt[0], (int) pt[1]);
-            setRadialMenuGesturePoint(event.getX(actionIndex), event.getY(actionIndex));
-            injectClick(tapAction);
-            notifyHighlight(event.getX(actionIndex), event.getY(actionIndex));
-            notifyGesture("Tap");
-            delayedPressAction = tapAction;
-            delayedPress = () -> {
-                injectRelease(tapAction);
-                delayedPressAction = null;
-                delayedPress = null;
-            };
-            postDelayed(delayedPress, CLICK_DELAYED_TIME);
+            performScreenTap(event.getX(actionIndex), event.getY(actionIndex), pt, gestureConfig.getTapAction());
         }
 
         // Record for double-tap detection (even if tap itself is disabled,
@@ -1520,6 +1502,22 @@ public class TouchpadView extends View implements View.OnCapturedPointerListener
     }
 
     // ── Helpers ──────────────────────────────────────────────────────
+
+    private void performScreenTap(float x, float y, float[] pt, String action) {
+        flushPendingTapRelease();
+        moveCursorTo((int) pt[0], (int) pt[1]);
+        setRadialMenuGesturePoint(x, y);
+        injectClick(action);
+        notifyHighlight(x, y);
+        notifyGesture("Tap");
+        delayedPressAction = action;
+        delayedPress = () -> {
+            injectRelease(action);
+            delayedPressAction = null;
+            delayedPress = null;
+        };
+        postDelayed(delayedPress, CLICK_DELAYED_TIME);
+    }
 
     private void flushPendingTapRelease() {
         if (delayedPress != null) {
@@ -2252,6 +2250,63 @@ public class TouchpadView extends View implements View.OnCapturedPointerListener
         int dy = Mathf.roundPoint(moveY);
         if (xServer.isRelativeMouseMovement()) {
             xServer.getWinHandler().mouseEvent(MouseEventFlags.MOVE, dx, dy, 0);
+        } else {
+            xServer.injectPointerMoveDelta(dx, dy);
+        }
+    }
+
+    public void tapFromMobileLook(float x, float y) {
+        if (!isEnabled() || touchscreenMouseDisabled) return;
+        performScreenTap(x, y, XForm.transformPoint(xform, x, y), TouchGestureConfig.ACTION_LEFT_CLICK);
+    }
+
+    /** The HUD editor receives a single ordinary left drag, independent of the play gesture settings. */
+    public boolean beginMobileEditorTouch(float x, float y) {
+        if (!isEnabled() || touchscreenMouseDisabled) return false;
+        moveMobileEditorTouch(x, y);
+        xServer.injectPointerButtonPress(Pointer.Button.BUTTON_LEFT);
+        return true;
+    }
+
+    public void moveMobileEditorTouch(float x, float y) {
+        float[] point = XForm.transformPoint(xform, x, y);
+        xServer.injectPointerMove((int) point[0], (int) point[1]);
+    }
+
+    public void endMobileEditorTouch() {
+        xServer.injectPointerButtonRelease(Pointer.Button.BUTTON_LEFT);
+    }
+
+    public boolean isMobileChatTouch(float x, float y) {
+        float[] point = XForm.transformPoint(xform, x, y);
+        float height = xServer.screenInfo.height;
+        // The game-side chat composer fits this part of the guest viewport, including channel and scroll buttons.
+        return point[0] >= height * .06f && point[0] <= height * 1.03f
+            && point[1] >= height * .13f && point[1] <= height * .48f;
+    }
+
+    public void beginMobileLook() {
+        flushPendingTapRelease();
+        flushPendingHoldClickRelease();
+        mobileLookRemainderX = 0;
+        mobileLookRemainderY = 0;
+    }
+
+    /** Keep fractional motion between samples so slow swipes keep turning the camera. */
+    public void movePointerFromMobileLook(float deltaX, float deltaY, float lookSensitivity) {
+        if (!isEnabled() || touchscreenMouseDisabled) return;
+        float[] delta = computeDeltaPoint(0, 0, deltaX, deltaY);
+        mobileLookRemainderX += delta[0] * lookSensitivity;
+        mobileLookRemainderY += delta[1] * lookSensitivity;
+        int dx = (int) mobileLookRemainderX;
+        int dy = (int) mobileLookRemainderY;
+        if (dx == 0 && dy == 0) return;
+        mobileLookRemainderX -= dx;
+        mobileLookRemainderY -= dy;
+
+        WinHandler handler = xServer.getWinHandler();
+        if (xServer.isRelativeMouseMovement() && handler != null) {
+            handler.mouseEvent(MouseEventFlags.MOVE, dx, dy, 0);
         } else {
             xServer.injectPointerMoveDelta(dx, dy);
         }

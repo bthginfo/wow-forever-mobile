@@ -170,6 +170,7 @@ public abstract class ImageFsInstaller {
 
                 installWineFromDownloads(context);
                 installGuestLibs(context);
+                imageFs.createVariantFile(containerVariant);
                 imageFs.createImgVersionFile(LATEST_VERSION);
                 resetContainerImgVersions(context);
             }
@@ -249,18 +250,25 @@ public abstract class ImageFsInstaller {
     private static void chmod(File f) { if (f.exists()) FileUtils.chmod(f, 0755);}
 
     public static Future<Boolean> installIfNeededFuture(final Context context, AssetManager assetManager, Container container, Callback<Integer> onProgress) {
+        return installIfNeededFuture(context, assetManager, container.getContainerVariant(), container.getWineVersion(), onProgress);
+    }
+
+    public static boolean requiresInstall(ImageFs imageFs, String variant) {
+        return !imageFs.isValid() || imageFs.getVersion() < LATEST_VERSION || !imageFs.getVariant().equals(variant);
+    }
+
+    public static Future<Boolean> installIfNeededFuture(final Context context, AssetManager assetManager, String variant, String wineVersion, Callback<Integer> onProgress) {
         ImageFs imageFs = ImageFs.find(context);
-        String wineVersion = container.getWineVersion();
         if (!ImageFSLegacyMigrator.migrateLegacyDirsIfNeeded(context, imageFs.getRootDir(), wineVersion)) {
             Log.w("ImageFsInstaller", "Failed to migrate legacy directories before installation.");
             return Executors.newSingleThreadExecutor().submit(() -> false);
         }
-        if (!imageFs.isValid() || imageFs.getVersion() < LATEST_VERSION || !imageFs.getVariant().equals(container.getContainerVariant())) {
+        if (requiresInstall(imageFs, variant)) {
             Log.d("ImageFsInstaller", "Installing image from assets");
             return installFromAssetsFuture(
                     context,
                     assetManager,
-                    container.getContainerVariant(),
+                    variant,
                     wineVersion,
                     onProgress
             );

@@ -18,18 +18,28 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.lifecycle.lifecycleScope
 import app.gamenative.BuildConfig
 import app.gamenative.PrefManager
 import app.gamenative.events.AndroidEvent
 import app.gamenative.ui.PluviaMain
 import app.gamenative.ui.enums.Orientation
+import app.gamenative.ui.screen.wow.AppLanguage
+import app.gamenative.ui.screen.wow.AppLanguageDialog
+import app.gamenative.ui.theme.PluviaTheme
+import app.gamenative.ui.theme.WowBackgroundGradient
 import app.gamenative.ui.util.LocalSnackbarHostController
 import app.gamenative.ui.util.SnackbarHostController
 import app.gamenative.utils.LocaleHelper
@@ -37,7 +47,9 @@ import app.gamenative.ui.util.SnackbarManager
 import com.winlator.core.AppUtils
 import com.winlator.inputcontrols.ControllerManager
 import dagger.hilt.android.AndroidEntryPoint
+import java.io.IOException
 import java.util.EnumSet
+import kotlinx.coroutines.launch
 import timber.log.Timber
 
 @AndroidEntryPoint
@@ -72,14 +84,17 @@ class MainActivity : ComponentActivity() {
     }
 
     private var desiredSystemUiVisible: Boolean = false
+    private var appLanguage: AppLanguage? = null
+    private var savingLanguage by mutableStateOf(false)
+    private var languageSaveFailed by mutableStateOf(false)
 
     override fun attachBaseContext(newBase: Context) {
         // Initialize PrefManager to read language setting
         PrefManager.init(newBase)
 
         // Apply the saved language preference before creating the activity
-        val languageCode = PrefManager.appLanguage
-        val context = LocaleHelper.applyLanguage(newBase, languageCode)
+        appLanguage = AppLanguage.fromTag(PrefManager.appLanguage)
+        val context = LocaleHelper.applyLanguage(newBase, appLanguage?.tag.orEmpty())
         super.attachBaseContext(context)
     }
 
@@ -111,14 +126,57 @@ class MainActivity : ComponentActivity() {
         PluviaApp.events.on<AndroidEvent.EndProcess, Unit>(onEndProcess)
 
         setContent {
-            val snackbarController = remember { SnackbarHostController() }
-            CompositionLocalProvider(
-                LocalSnackbarHostController provides snackbarController,
-            ) {
-                PluviaMain()
+            var showLanguages by rememberSaveable { mutableStateOf(false) }
+            val current = appLanguage
+            if (current != null) {
+                val snackbarController = remember { SnackbarHostController() }
+                CompositionLocalProvider(LocalSnackbarHostController provides snackbarController) {
+                    PluviaMain(onOpenLanguage = {
+                        languageSaveFailed = false
+                        showLanguages = true
+                    })
+                }
+            } else {
+                Box(Modifier.fillMaxSize().background(Brush.verticalGradient(WowBackgroundGradient)))
+            }
+            if (current == null || showLanguages) {
+                PluviaTheme {
+                    AppLanguageDialog(
+                        current = current,
+                        saving = savingLanguage,
+                        saveFailed = languageSaveFailed,
+                        onSelect = { language ->
+                            if (language == current) {
+                                showLanguages = false
+                            } else {
+                                saveLanguageAndRecreate(language) { showLanguages = false }
+                            }
+                        },
+                        onDismiss = { showLanguages = false },
+                    )
+                }
             }
         }
     }
+
+    private fun saveLanguageAndRecreate(language: AppLanguage, onSaved: () -> Unit) {
+        if (savingLanguage) return
+        languageSaveFailed = false
+        savingLanguage = true
+        lifecycleScope.launch {
+            try {
+                PrefManager.saveAppLanguage(language.tag)
+                onSaved()
+                recreate()
+            } catch (error: IOException) {
+                Timber.w(error, "Could not save app language")
+                languageSaveFailed = true
+            } finally {
+                savingLanguage = false
+            }
+        }
+    }
+
     override fun onDestroy() {
         // emit before super so Compose DisposableEffects (which unregister
         // listeners during super.onDestroy's lifecycle transition) still fire

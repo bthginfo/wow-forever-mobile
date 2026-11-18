@@ -1,5 +1,6 @@
 package app.gamenative.externaldisplay
 
+import android.content.ClipboardManager
 import android.content.Context
 import android.view.KeyEvent
 import android.view.inputmethod.BaseInputConnection
@@ -7,6 +8,11 @@ import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import android.view.inputmethod.InputMethodManager
 import android.widget.FrameLayout
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import app.gamenative.R
+import app.gamenative.ui.util.SnackbarManager
+import com.winlator.xserver.XKeycode
 import com.winlator.xserver.Pointer
 import com.winlator.xserver.XServer
 import kotlinx.coroutines.delay
@@ -48,6 +54,7 @@ class IMEInputReceiver(
     }
 
     private var imeSessionActive = false
+    private var onChatSend: (() -> Unit)? = null
 
     init {
         isFocusable = false
@@ -55,9 +62,7 @@ class IMEInputReceiver(
     }
 
     override fun onCheckIsTextEditor(): Boolean {
-        val isEditor = imeSessionActive && hasFocus()
-        Timber.d("IMEInputReceiver: onCheckIsTextEditor called - returning $isEditor")
-        return isEditor
+        return imeSessionActive && hasFocus()
     }
 
     override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection {
@@ -73,23 +78,31 @@ class IMEInputReceiver(
         outAttrs.inputType = EditorInfo.TYPE_CLASS_TEXT or 
                              EditorInfo.TYPE_TEXT_FLAG_NO_SUGGESTIONS or
                              EditorInfo.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
+        val chatSend = onChatSend
         outAttrs.imeOptions = EditorInfo.IME_FLAG_NO_FULLSCREEN or 
                               EditorInfo.IME_FLAG_NO_EXTRACT_UI or
-                              EditorInfo.IME_ACTION_NONE
+                              EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING or
+                              (if (chatSend != null) EditorInfo.IME_ACTION_SEND else EditorInfo.IME_ACTION_NONE)
         
         return object : BaseInputConnection(this, false) {
             override fun commitText(text: CharSequence?, newCursorPosition: Int): Boolean {
-                Timber.d("IMEInputReceiver: commitText called with: '$text'")
-                text?.let(::typeText)
+                if (!imeSessionActive || chatSend !== onChatSend) return false
+                editable?.clear()
+                if (text != null) {
+                    if (chatSend == null) typeText(text)
+                    else if (text.toString() == "\n") chatSend()
+                    else typeText(normalizeMobileChat(text))
+                }
                 return true
             }
 
             override fun deleteSurroundingText(beforeLength: Int, afterLength: Int): Boolean {
+                if (!imeSessionActive || chatSend !== onChatSend) return false
                 Timber.d("IMEInputReceiver: deleteSurroundingText called")
                 if (beforeLength > 0) {
-                    repeat(beforeLength) {
-                        xServer.injectKeyPress(com.winlator.xserver.XKeycode.KEY_BKSP, 0)
-                        xServer.injectKeyRelease(com.winlator.xserver.XKeycode.KEY_BKSP)
+                    repeat(beforeLength.coerceAtMost(256)) {
+                        xServer.injectKeyPress(XKeycode.KEY_BKSP, 0, false)
+                        xServer.injectKeyRelease(XKeycode.KEY_BKSP)
                     }
                     Timber.v("IMEInputReceiver: Sent backspace x$beforeLength")
                 }
@@ -97,13 +110,23 @@ class IMEInputReceiver(
             }
 
             override fun sendKeyEvent(event: KeyEvent): Boolean {
-                if (event.action == KeyEvent.ACTION_DOWN && event.keyCode == KeyEvent.KEYCODE_DEL) {
-                    xServer.injectKeyPress(com.winlator.xserver.XKeycode.KEY_BKSP, 0)
-                    xServer.injectKeyRelease(com.winlator.xserver.XKeycode.KEY_BKSP)
-                    Timber.v("IMEInputReceiver: Sent backspace from sendKeyEvent")
+                if (!imeSessionActive || chatSend !== onChatSend) return false
+                if (event.keyCode == KeyEvent.KEYCODE_ENTER && chatSend != null) {
+                    if (event.action == KeyEvent.ACTION_UP) chatSend()
                     return true
                 }
+                if (event.keyCode == KeyEvent.KEYCODE_DEL || event.keyCode == KeyEvent.KEYCODE_ENTER) {
+                    return xServer.keyboard.onKeyEvent(event)
+                }
                 return super.sendKeyEvent(event)
+            }
+
+            override fun performEditorAction(actionCode: Int): Boolean {
+                if (chatSend != null && imeSessionActive && chatSend === onChatSend && actionCode == EditorInfo.IME_ACTION_SEND) {
+                    chatSend()
+                    return true
+                }
+                return super.performEditorAction(actionCode)
             }
         }
     }
@@ -123,6 +146,27 @@ class IMEInputReceiver(
 
     fun typeText(text: CharSequence) {
         text.forEach(::sendCharacterToGame)
+    }
+
+    fun clipboardText(): CharSequence? {
+        val manager = context.getSystemService(ClipboardManager::class.java)
+        val clip = manager?.primaryClip ?: return null
+        return if (clip.itemCount > 0) clip.getItemAt(0).text else null
+    }
+
+    fun pasteFromClipboard(chat: Boolean = false): Boolean {
+        val copied = clipboardText()
+        val text = if (chat && copied != null) normalizeMobileChat(copied) else copied
+        if (text.isNullOrEmpty()) {
+            SnackbarManager.show(context.getString(R.string.mobile_clipboard_empty))
+            return false
+        }
+        if (text.length > 256 || text.any { it.isISOControl() || charToKeyDispatch(it) == null }) {
+            SnackbarManager.show(context.getString(R.string.mobile_clipboard_unsupported))
+            return false
+        }
+        typeText(text)
+        return true
     }
 
     private fun sendCharacterToGame(char: Char) {
@@ -149,11 +193,6 @@ class IMEInputReceiver(
             )
             xServer.keyboard.onKeyEvent(upEvent)
 
-            Timber.v(
-                "IMEInputReceiver: Sent char '$char' as keyCode ${keyDispatch.keyCode} (shift=${keyDispatch.requiresShift})",
-            )
-        } else {
-            Timber.w("IMEInputReceiver: Could not map character '$char' to keyCode")
         }
     }
 
@@ -220,15 +259,21 @@ class IMEInputReceiver(
         return KeyDispatch(keyCode = keyCode, requiresShift = requiresShift)
     }
 
-    fun showKeyboard() {
+    fun showKeyboard() = showKeyboard(null)
+
+    fun showKeyboard(chatSend: (() -> Unit)?) {
         post {
+            if (!isAttachedToWindow) return@post
             imeSessionActive = true
+            onChatSend = chatSend
             isFocusable = true
             isFocusableInTouchMode = true
-            requestFocus()
-            val imm = displayContext.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
-            imm?.showSoftInput(this, InputMethodManager.SHOW_IMPLICIT)
-            Timber.d("IMEInputReceiver: Requested to show keyboard")
+            if (!requestFocus()) return@post
+            val imm = displayContext.getSystemService(InputMethodManager::class.java)
+            imm?.restartInput(this)
+            if (imm?.showSoftInput(this, InputMethodManager.SHOW_IMPLICIT) != true) {
+                ViewCompat.getWindowInsetsController(this)?.show(WindowInsetsCompat.Type.ime())
+            }
         }
     }
 
@@ -236,11 +281,34 @@ class IMEInputReceiver(
         post {
             val imm = displayContext.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
             imm?.hideSoftInputFromWindow(windowToken, 0)
-            clearFocus()
             imeSessionActive = false
+            onChatSend = null
+            clearFocus()
             isFocusable = false
             isFocusableInTouchMode = false
             Timber.d("IMEInputReceiver: Requested to hide keyboard")
         }
+    }
+}
+
+// Wine's current keyboard bridge sends US keyboard events. Only chat may substitute characters.
+internal fun normalizeMobileChat(text: CharSequence): String = buildString(text.length) {
+    for (character in text) {
+        append(when (character) {
+            'ä' -> "ae"
+            'ö' -> "oe"
+            'ü' -> "ue"
+            'Ä' -> "Ae"
+            'Ö' -> "Oe"
+            'Ü' -> "Ue"
+            'ß' -> "ss"
+            'ẞ' -> "SS"
+            '\n', '\r', '\t', '\u00a0' -> " "
+            '‘', '’' -> "'"
+            '“', '”', '„' -> "\""
+            '–', '—' -> "-"
+            '…' -> "..."
+            else -> character.toString()
+        })
     }
 }

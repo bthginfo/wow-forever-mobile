@@ -1,8 +1,10 @@
 package app.gamenative.ui.screen.wow
 
 import android.content.Context
+import android.util.AtomicFile
 import com.winlator.core.WineRegistryEditor
 import java.io.File
+import java.io.FileNotFoundException
 import java.security.SecureRandom
 import java.util.Properties
 import java.util.UUID
@@ -69,7 +71,7 @@ internal data class WowMachineIdentity(
         private const val INSTALL_DATE_FROM = 1_609_459_200
         private const val INSTALL_DATE_UNTIL = 1_748_736_000
 
-        // Also keeps the env var and the registry in agreement within a run if the identity can't be saved.
+        // Keeps the launcher and the Wine registry on the same persisted identity during a run.
         private var cached: WowMachineIdentity? = null
 
         @Synchronized
@@ -77,15 +79,29 @@ internal data class WowMachineIdentity(
 
         private fun read(context: Context): WowMachineIdentity {
             val file = File(context.filesDir, FILE_NAME)
+            val atomicFile = AtomicFile(file)
             val props = Properties()
-            runCatching { file.inputStream().use(props::load) }
+            try {
+                atomicFile.openRead().use(props::load)
+            } catch (error: FileNotFoundException) {
+                if (file.exists()) throw error
+            }
             fromProperties(props)?.let { return it }
 
             val identity = generate(SecureRandom())
             props.clear()
             props.putAll(identity.toProperties())
-            runCatching { file.outputStream().use { props.store(it, null) } }
-                .onFailure { Timber.e(it, "Couldn't save the machine identity") }
+            val output = atomicFile.startWrite()
+            try {
+                props.store(output, null)
+                atomicFile.finishWrite(output)
+            } catch (error: Exception) {
+                atomicFile.failWrite(output)
+                throw error
+            }
+            val saved = Properties()
+            atomicFile.openRead().use(saved::load)
+            check(fromProperties(saved) == identity) { "Could not persist the Wine machine identity." }
             return identity
         }
 

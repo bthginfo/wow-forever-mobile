@@ -2,6 +2,8 @@ package app.gamenative.ui.screen.wow
 
 import android.content.Context
 import android.os.FileObserver
+import android.os.SystemClock
+import android.util.AtomicFile
 import android.util.Base64
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -21,12 +23,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import app.gamenative.Crypto
+import app.gamenative.R
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -35,7 +40,11 @@ import java.io.File
 import java.util.concurrent.atomic.AtomicLong
 
 object BattleNetSignIn {
-    data class Login(val email: String, val password: String)
+    data class Login(val email: String, val password: String) {
+        val canWriteLoginFile: Boolean
+            get() = email.isNotBlank() && password.isNotEmpty() &&
+                email.none(::isLoginFileSeparator) && password.none(::isLoginFileSeparator)
+    }
 
     fun load(context: Context): Login? {
         val prefs = prefs(context)
@@ -51,6 +60,7 @@ object BattleNetSignIn {
     }
 
     fun save(context: Context, login: Login) {
+        require(login.canWriteLoginFile) { "Login fields must fit on one line each." }
         val sealed = Base64.encodeToString(Crypto.encrypt(login.password.toByteArray()), Base64.NO_WRAP)
         prefs(context).edit().putString(KEY_EMAIL, login.email).putString(KEY_PASSWORD, sealed).apply()
     }
@@ -59,62 +69,100 @@ object BattleNetSignIn {
         prefs(context).edit().clear().apply()
     }
 
-    fun writeLoginFile(gameRoot: File, login: Login) {
-        try {
-            val file = File(File(gameRoot, WowClientDownloader.FLAVOR_DIR), LOGIN_FILE)
-            file.parentFile?.mkdirs()
-            file.writeText("${login.email}\n${login.password}\n")
-        } catch (e: Exception) {
-            Timber.e(e, "Failed to write login.txt")
-        }
-    }
+    private var watcher: Job? = null
+    private var watchedRoot: File? = null
+    private var generation = 0L
 
-    // Also clears a login.txt left in the beta folder, which the full release no longer reads.
-    fun removeLoginFile(gameRoot: File) {
-        listOf(WowClientDownloader.FLAVOR_DIR, WowClientDownloader.LEGACY_FLAVOR_DIR).forEach { flavorDir ->
-            try {
-                val file = File(File(gameRoot, flavorDir), LOGIN_FILE)
-                if (file.exists()) {
-                    file.writeBytes(ByteArray(file.length().coerceAtMost(4096).toInt()))
-                    file.delete()
-                }
-            } catch (e: Exception) {
-                Timber.e(e, "Failed to remove login.txt")
-            }
-        }
-    }
-
-    /**
-     * Removes login.txt, which holds the password in plain text in shared storage, once the login has gone through
-     * (Hotfix.log fills up). WoW reads the file several times over a couple of seconds and only signs in afterwards, so
-     * it can't go on the first read. If the login fails, it goes a minute after WoW last read it. Storage mounts don't
-     * all deliver file events (some SD cards), so the last resort is a deadline long enough for a fresh install's first
-     * boot, which streams assets and plays the intro cinematic before reaching the login screen.
-     */
-    fun startLoginWatcher(gameRoot: File) {
+    @Synchronized
+    fun prepareLoginFile(gameRoot: File, login: Login): Boolean {
+        removeLoginFile(gameRoot)
+        if (!login.canWriteLoginFile) return false
         val flavorDir = File(gameRoot, WowClientDownloader.FLAVOR_DIR)
-        val hotfixLog = File(flavorDir, "Logs/Hotfix.log")
-        hotfixLog.delete()
-        val lastRead = AtomicLong()
-        @Suppress("DEPRECATION") // The File constructor needs API 29.
-        val observer = object : FileObserver(flavorDir.path, CLOSE_NOWRITE) {
-            override fun onEvent(event: Int, path: String?) {
-                if (path == LOGIN_FILE) lastRead.set(System.currentTimeMillis())
-            }
-        }
-        observer.startWatching()
-        CoroutineScope(Dispatchers.IO).launch {
+        val file = File(flavorDir, LOGIN_FILE)
+        try {
+            flavorDir.mkdirs()
+            val payload = "${login.email}\n${login.password}\n".toByteArray(Charsets.UTF_8)
+            val atomicFile = AtomicFile(file)
+            val output = atomicFile.startWrite()
             try {
-                val deadline = System.currentTimeMillis() + 600_000L
-                while (isActive && System.currentTimeMillis() < deadline &&
-                    !(hotfixLog.exists() && hotfixLog.length() > 50_000L) &&
-                    !(lastRead.get() > 0 && System.currentTimeMillis() - lastRead.get() > 60_000L)
-                ) {
+                output.write(payload)
+                atomicFile.finishWrite(output)
+            } catch (error: Exception) {
+                atomicFile.failWrite(output)
+                throw error
+            } finally {
+                payload.fill(0)
+            }
+            check(file.isFile && file.length() > 0L) { "The login file was not available after writing." }
+        } catch (e: Exception) {
+            eraseLoginFiles(gameRoot)
+            Timber.e(e, "Failed to write login.txt")
+            return false
+        }
+
+        val attempt = generation
+        val started = SystemClock.elapsedRealtime()
+        val hotfixLog = File(flavorDir, "Logs/Hotfix.log")
+        val initialLogLength = hotfixLog.length()
+        val initialLogTimestamp = hotfixLog.lastModified()
+        val lastRead = AtomicLong(-1L)
+        watchedRoot = gameRoot
+        watcher = CoroutineScope(Dispatchers.IO).launch {
+            @Suppress("DEPRECATION") // The File constructor needs API 29.
+            val observer = object : FileObserver(flavorDir.path, CLOSE_NOWRITE) {
+                override fun onEvent(event: Int, path: String?) {
+                    if (path == LOGIN_FILE) lastRead.set(SystemClock.elapsedRealtime())
+                }
+            }
+            try {
+                observer.startWatching()
+                while (isActive && SystemClock.elapsedRealtime() - started < 600_000L) {
+                    val hasNewHotfixData = hotfixLog.lastModified() != initialLogTimestamp &&
+                        (hotfixLog.length() - initialLogLength > 50_000L ||
+                            (hotfixLog.length() < initialLogLength && hotfixLog.length() > 50_000L))
+                    val lastAccess = lastRead.get()
+                    if (hasNewHotfixData || (lastAccess >= 0 && SystemClock.elapsedRealtime() - lastAccess > 60_000L)) break
                     delay(1000L)
                 }
             } finally {
                 observer.stopWatching()
-                removeLoginFile(gameRoot)
+                finishLoginAttempt(gameRoot, attempt)
+            }
+        }
+        return true
+    }
+
+    @Synchronized
+    private fun finishLoginAttempt(gameRoot: File, attempt: Long) {
+        if (generation != attempt) return
+        watcher = null
+        watchedRoot = null
+        eraseLoginFiles(gameRoot)
+    }
+
+    @Synchronized
+    fun removeLoginFile(gameRoot: File) {
+        generation++
+        watcher?.cancel()
+        watcher = null
+        watchedRoot?.takeIf { it != gameRoot }?.let(::eraseLoginFiles)
+        watchedRoot = null
+        eraseLoginFiles(gameRoot)
+    }
+
+    // Also clears a login.txt from the earlier beta directory.
+    private fun eraseLoginFiles(gameRoot: File) {
+        listOf(WowClientDownloader.FLAVOR_DIR, WowClientDownloader.LEGACY_FLAVOR_DIR).forEach { flavorDir ->
+            listOf(LOGIN_FILE, "$LOGIN_FILE.new", "$LOGIN_FILE.bak").forEach { name ->
+                try {
+                    val file = File(File(gameRoot, flavorDir), name)
+                    if (file.isFile) {
+                        file.writeBytes(ByteArray(file.length().coerceAtMost(4096).toInt()))
+                        file.delete()
+                    }
+                } catch (e: Exception) {
+                    Timber.e(e, "Failed to remove a temporary login file")
+                }
             }
         }
     }
@@ -125,6 +173,8 @@ object BattleNetSignIn {
     private const val KEY_EMAIL = "email"
     private const val KEY_PASSWORD = "password"
     private const val LOGIN_FILE = "login.txt"
+
+    private fun isLoginFileSeparator(character: Char) = character == '\r' || character == '\n' || character == '\u0000'
 }
 
 @Composable
@@ -136,6 +186,7 @@ fun BattleNetCredentialDialog(
     var password by remember { mutableStateOf("") }
     val emailFocus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
+    val login = BattleNetSignIn.Login(email.trim(), password)
     LaunchedEffect(Unit) {
         delay(DIALOG_SETTLE_MS)
         emailFocus.requestFocus()
@@ -143,15 +194,15 @@ fun BattleNetCredentialDialog(
     }
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Battle.net login") },
+        title = { Text(stringResource(R.string.mobile_saved_login_title)) },
         text = {
             Column {
-                Text("Saved encrypted on this device. WoW will automatically log in on launch.")
+                Text(stringResource(R.string.mobile_saved_login_details))
                 Spacer(Modifier.height(12.dp))
                 OutlinedTextField(
                     value = email,
                     onValueChange = { email = it },
-                    label = { Text("Email") },
+                    label = { Text(stringResource(R.string.mobile_login_email)) },
                     singleLine = true,
                     modifier = Modifier.focusRequester(emailFocus),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
@@ -159,7 +210,7 @@ fun BattleNetCredentialDialog(
                 OutlinedTextField(
                     value = password,
                     onValueChange = { password = it },
-                    label = { Text("Password") },
+                    label = { Text(stringResource(R.string.mobile_login_password)) },
                     singleLine = true,
                     visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
@@ -168,11 +219,11 @@ fun BattleNetCredentialDialog(
         },
         confirmButton = {
             TextButton(
-                enabled = email.isNotBlank() && password.isNotEmpty(),
-                onClick = { onConfirm(BattleNetSignIn.Login(email.trim(), password)) },
-            ) { Text("Save") }
+                enabled = login.canWriteLoginFile,
+                onClick = { onConfirm(login) },
+            ) { Text(stringResource(R.string.save)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
     )
 }
 
