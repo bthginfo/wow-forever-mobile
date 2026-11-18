@@ -1,146 +1,93 @@
 # WoW Forever Mobile
 
-Play **World of Warcraft: Forever** on Snapdragon Android handhelds as a normal Android app. You tap the icon, press Play, and the game runs.
+An Android launcher and touch interface for Blizzard’s Windows ARM64 WoW Forever client. The launcher runs the client on the phone using Wine/Proton. It includes a browser-based Battle.net login, Android keyboard and clipboard controls, and a configurable in-game touch HUD.
 
-This uses Blizzard's own **Windows ARM64** WoW client, so the game itself runs natively on the phone's CPU. Wine translates the Windows calls, and DXVK plus a patched Turnip Vulkan driver render the game on the Adreno GPU. Nothing is emulated as x86.
+[Download the latest signed APK](../../releases/latest)
 
-> Unofficial community project. Not affiliated with or endorsed by Blizzard Entertainment. You need your own Battle.net account with WoW Forever access. This repo and its releases contain **no** Blizzard game files.
+## What runs on the device
 
----
+| Component | Role |
+| --- | --- |
+| GameNative-based Android launcher | Prepares the Wine prefix, mounts the game folder and presents the game through its X server. |
+| Wine/Proton 11 ARM64EC | Provides the Windows environment for the ARM64 game executable. |
+| ARM64 DXVK and Mesa Turnip | Translate Direct3D 11 to Vulkan and drive the Adreno GPU. |
+| Battle.net browser sign-in | Opens Battle.net’s sign-in page and passes a game session to the ARM64 Wine helper. |
+| Forever Touch Lua add-on | Scans populated action slots and builds editable touch arcs for spells and items. |
 
-## Supported devices
+This is an unofficial launcher for players with access to WoW Forever through their Battle.net account. The game client and data come from Blizzard or your existing WoW Forever installation.
 
-| Device | Status |
-| :--- | :--- |
-| AYN Thor (Snapdragon 8 Gen 2 / Adreno 740) | Tested, reaches the game world with controller support |
-| Retroid Pocket 6 (Snapdragon 8 Gen 2 / Adreno 740) | Tested by the original community setup |
-| AYN Odin 2 / Mini (Snapdragon 8 Gen 2) | Expected to work |
-| OnePlus 15r (Snapdragon 8 Gen 5 / Adreno 829) | Tested in-world by Nathangarl |
-| AYN Odin Portal (Snapdragon 8 Elite / Adreno 830) | Supported via bundled Turnip v32 driver |
-| RedMagic 11 Pro (Snapdragon 8 Elite / Adreno 840) | Tested in-world by arusiasotto |
-| Poco F7 (Snapdragon 8s Gen 4 / Adreno 825) | Tested by gusebus |
-| Samsung Galaxy S23/S24/S25 / Z Fold series | Supported (with automatic Samsung UBWC optimization) |
+## Requirements
 
-Requirements:
+- A 64-bit Android phone or handheld with a Snapdragon 8-series SoC and an Adreno 7xx or 8xx GPU. The runtime is designed for Android 10 and later.
+- Several GB of free internal space for the app and its Wine environment. The game folder can grow past 50 GB as it caches more data.
+- A Battle.net account with access to WoW Forever. Install the Battle.net Android app if you use its Authenticator.
+- Wi-Fi for the first download. A computer is optional for players who already have game files to copy.
 
-- Snapdragon 8 series (Adreno 7xx or Adreno 8xx). The app bundles both the Adreno 740 driver and the Turnip v32 driver for Snapdragon 8 Elite / Adreno 8xx, automatically detecting the GPU and applying the optimal driver and environment flags.
-- Android 10 or newer, 64-bit.
-- About **60 GB** free for the game data (internal storage or SD card), plus about 4 GB of internal storage for the app and its Windows environment.
-- Wi-Fi. A computer is optional: it only speeds up the first install by copying the game data over instead of streaming it.
+## Install and set up
 
----
+1. **Install the APK.** Open the release on your Android device, download the file ending in `.apk` under **Assets**, and open it. If Android prompts for installation permission, allow installs from the browser or file manager you used to open the download. Builds signed by this project can update an existing WoW Forever Touch installation with the same signing key.
+2. **Choose your language.** Open **WoW Forever Touch** and select **English** or **Deutsch**. You can change it later under **Language** in the launcher. The selection covers setup, the launcher’s login and connection UI, the touch toolbar, and the mobile skill editor. WoW and the Battle.net website manage the language of their own content.
+3. **Grant storage access.** The launcher asks for **All files access** so it can read and update the game folder on Android’s shared storage.
+4. **Set your game folder.** Use **Download and install** for a fresh setup. For files you already have, use **Find existing game files** and select their installation folder. The default is `/storage/emulated/0/WoW Forever/`.
+5. **Check Region and Resolution.** The launcher suggests a Battle.net region from the Android country setting on a fresh setup. It uses Europe for supported European locales, Korea for Korea, Taiwan for Taiwan and Hong Kong, and Americas as the fallback. Choose your account’s region in the launcher if you prefer a different one. The app saves that choice. Select **720p**, **900p**, or **1080p** to suit your device.
+6. **Tap Play World of Warcraft.** Allow time for the first runtime setup, then complete the Battle.net browser login. Use **Authenticator** in the sign-in screen to switch to the Battle.net app and return to WoW after approval.
+7. **Enter the game.** Use **Play controls** in the toolbar when you’re ready to switch from login controls to the in-game touch layout.
 
-## Installation
+### Use files from an existing installation
 
-### 1. Install the app
+Select the folder that contains `.build.info` and `Data/`. You can copy those two items from a WoW Forever installation on another device. Make sure your file manager shows the hidden `.build.info` file.
 
-Download the signed WoW Forever Mobile APK from this repository's [Releases](../../releases) and install it on your device. The package name is `app.wowforever.mobile.touchhud`. An APK with the same signing certificate can update an existing installation.
-
-Choose **English** or **Deutsch** the first time you open the app. You can change the launcher and mobile HUD language later under **Language / Sprache**.
-
-### 2. Install the game
-
-Open **WoW Forever** and grant **All files access** when asked; the app needs it to read and write the game folder. The launcher then shows **Install World of Warcraft** with the install location, which defaults to `/storage/emulated/0/WoW Forever/`. Tap **Change Install Location** to use another folder, such as one on an SD card (picking a folder that isn't empty, like the card's root, installs into a new `WoW Forever` folder inside it), then tap **Download & Install**.
-
-The app downloads the Windows ARM64 client and the CASC archive indexes (about 250 MB) from Blizzard's CDN, checking every hash. The rest of the game data isn't downloaded up front: the game client streams it from Blizzard's CDN as you play and keeps it on disk. Expect longer loading screens the first time you visit a zone. The data grows to about 50 GB once you've been everywhere.
-
-#### Optional: copy the game from a computer instead
-
-If you have WoW Forever installed through Battle.net on a Mac or PC, copying its data skips the streaming. Copy two things from the install root (on a Mac that's `/Applications/World of Warcraft/`) into a `WoW Forever` folder at the root of internal storage or an SD card, where the launcher finds it automatically. Any other folder works too: tap **Locate Existing Files** and pick it.
-
-```
+```text
 WoW Forever/
-├── .build.info                   <- from the install root
-└── Data/                         <- the whole Data folder
+├── .build.info
+└── Data/
 ```
 
-- `Data/` is the same on every platform, so a Mac, Windows, or ARM install all work.
-- `.build.info` is a hidden file. Copy it too. Without it the game fails with *"CAS system was unable to initialize"*.
-- You don't need `Wow-ARM64.exe`. Mac and x86 installs don't ship it, so the app downloads the matching Windows ARM64 client from Blizzard's CDN when you press Play, and checks its hashes.
-- **Location** switches folders later.
+The launcher downloads the matching `_forever_/Wow-ARM64.exe` from Blizzard when needed. A fresh setup downloads the ARM64 client and archive indexes first. WoW caches additional zones and assets as you play.
 
-Ways to get the files onto the device:
+## Touch controls
 
-- **SD Card:** Insert the microSD card into your computer and copy the files over (make sure your file manager shows hidden files so `.build.info` is included).
-- **USB File Transfer:** Connect your device to your computer via USB (in File Transfer / MTP mode) and copy the files directly to internal storage (default: `/storage/emulated/0/WoW Forever/`).
-- **ADB Script:** If you have ADB installed and this repo checked out, you can use the sync script to copy initial files easily over USB:
+| Control | What it does |
+| --- | --- |
+| Left stick | Movement |
+| Right camera area | Drag to turn the camera |
+| Jump, Target, Interact | Right-side shortcuts |
+| Chat | Opens chat with the Android keyboard. The chat toolbar includes Paste and Send. |
+| Bags, Map, Character | Opens the corresponding WoW panel |
+| Talents, Quests, Spellbook | Opens the corresponding WoW panel |
+| More controls → Edit controls | Moves the sticks, shortcuts, or toolbar |
+| More controls → Edit skills | Assigns spells and usable bag items, swaps slots by dragging, and moves the arcs by their handles |
+| More controls → Camera sensitivity | Sets how quickly the camera turns |
+| More controls → Text input | Returns to keyboard, paste, Authenticator code entry, and the Battle.net shortcut |
 
-```bash
-WOW_SRC="/Applications/World of Warcraft" tools/sync_wow_to_device.sh
-```
+The touch overlay translates Android gestures into keyboard and mouse input for the game window. Forever Touch reads populated action slots and keeps a per-character mobile layout in its own add-on saved variables. Use **Edit skills** to set up the mobile spell and item buttons.
 
-#### Upgrading from the WoW Forever beta
+## Sign-in and connection
 
-Blizzard replaced the beta (`wow_classic_beta`, in `_classic_beta_/`) with the full release (`wowf`, in `_forever_/`). Both use the same game archives, so there's nothing to copy again. When the launcher finds a beta install it shows **WoW Forever Has Launched**. Tap **Upgrade Now** and the app:
-
-- downloads the full-release ARM64 client (about 100 MB) into `_forever_/`
-- adds a `wowf` entry to `.build.info`
-- carries over your settings from `_classic_beta_/WTF/Config.wtf`
-
-Your existing `Data/` folder is reused. The `_classic_beta_/` folder can be deleted afterwards.
-
-### 3. Play
-
-Tap **Play World of Warcraft** after the launcher recognizes your game files. The first launch downloads the ARM64 client and installs the Windows runtime. A full-release installation starts with Battle.net browser sign-in by default.
-
-- **Setup screen:** to access folder settings, forget credentials, check environment status, or view updates, hold **Start + Select + L2 + R2** (or tap the back button) during the loading splash to cancel boot and return to the setup screen.
-- The app creates a basic `WTF/Config.wtf` on first run and always sets `gxApi "D3D11"`, the renderer that works with DXVK.
-- **Region:** tap **Region** on the setup screen to choose Americas, Europe, Korea or Taiwan. The game logs straight into that region without showing its region picker. New installs default to a guess based on the phone's country. The game is also installed and updated to the build that region's realms run, which can differ between regions right after a patch.
-- **Resolution:** tap **Resolution** on the setup screen to choose 720p, 900p or 1080p. Adreno 740 devices default to 1080p and Adreno 8xx devices to 720p, which runs much smoother there. The game's resolution is set from this on every launch and reshaped to fit non-16:9 screens.
-- **Add-ons:** download an add-on's `.zip` on your device, then tap **Add-on** on the setup screen and pick it. It's installed into `_forever_/Interface/AddOns`, replacing any older copy. You can also copy add-on folders there yourself.
-
-### Controls and signing in
-
-- **Controller:** built-in handheld controllers work in-game. WoW's own gamepad mode handles the mapping.
-- **In-game menu:** press Back (the button or the back swipe gesture) to open the sidebar. It has **Keyboard**, on-screen controls, performance overlay and **Exit**.
-- **Keyboard:** the sidebar's **Keyboard** opens the Android keyboard. On dual-screen devices like the Thor it appears on the bottom screen. Symbols like `@` work, and so does pasting.
-- **Browser sign-in** opens Battle.net's page in the launcher and hands the game session to WoW via the ARM64 helper. The **Authenticator** button opens the Battle.net app if it is installed.
-- **Direct sign-in** opens the login in WoW. **Saved sign-in** lets you keep credentials encrypted on the device for this route. **Forget sign-in** clears them.
-- **Touch layout** uses left-hand movement, right-hand camera and jump, and two editable arcs for spells and items. The add-on stores its mobile layout per character.
-  - Each install shows Battle.net its own Windows PC identity (machine ID and a `DESKTOP-XXXXXXX` computer name), generated once and kept across updates. Reinstalling the app creates a new one, so Battle.net may treat it as a new device.
-
----
-
-## Updating the game
-
-WoW Forever v2.0 features a native in-app game updater connected directly to Blizzard's public edge CDNs. **You no longer need a computer or USB cables to keep your game updated.**
-
-Whenever Blizzard patches the game:
-1. **Live Version Check:** The launcher automatically checks the live version against Blizzard's public patch service on startup.
-2. **Update Gate:** If an update is detected, auto-launch cancels and displays the update card with the remote build version, plus a secondary *Launch Anyway (Outdated)* override.
-3. **One-Tap Update:** Tapping **UPDATE TO {version}** downloads the new ARM64 client binaries (`Wow-ARM64.exe` and companion DLLs), saves remote configs to `Data/config/`, syncs new CASC index archives to `Data/indices/`, and atomically updates `.build.info` on disk over Wi-Fi.
-4. **Instant Boot:** Once the update completes, the launcher automatically transitions into booting World of Warcraft at 60 FPS.
-5. **In-Game Streaming:** The game engine's internal streaming client seamlessly streams any newly introduced assets from Blizzard's edge CDNs during gameplay.
-
-*(Optional fallback: If you ever want to re-seed or mirror your full PC installation over USB, `tools/sync_wow_to_device.sh` is still available.)*
-
----
+- **Browser sign-in** is the default for full-release installations. The launcher keeps the sign-in page available while you switch to the Battle.net app for the Authenticator.
+- **Sign in directly in WoW** opens the game’s own login screen. **Saved sign-in** is an optional launcher setting for this route and stores credentials encrypted on the device.
+- **Startup and connection** shows the selected region, runtime and first window timings, browser session handoff, and recognized game connection events. Use **Copy** to share that report when asking for help.
 
 ## Troubleshooting
 
-| Symptom | Fix |
-| :--- | :--- |
-| *CAS system was unable to initialize: no active install info entries* | `.build.info` or `_forever_/.flavor.info` is missing on the device. |
-| *No realms available* / no servers listed | The device client is out of date. Tap **Update** on the launcher setup screen, or restart the app with Wi-Fi enabled. |
-| Keyboard doesn't appear | Force-stop Gboard (Settings → Apps → Gboard → Force stop) and open **Keyboard** again. It can get stuck on the second screen. |
-| Returns to the launcher after "Launching Game…" | Check the files under `_forever_/Errors/` on the device. |
-| Handheld frontend (e.g. Cocoon) shows the wrong icon | The frontend cached an old icon. Set it with the frontend's "Edit App Artwork", or reinstall the app. |
+- **Stuck on Connecting.** When the browser has handed off the session and WoW has recorded no response for about 35 seconds, open **Check connection** to view the last step or restart browser sign-in. Android devices with very long uptime can also hit a Wine timing issue. In that case, restart the phone and open the game again.
+- **Client files missing or out of date.** Check the selected **Region** and game folder, then use **Check game files** or install the offered client update. The launcher verifies client downloads against Blizzard’s manifests.
+- **Android rejects an update.** Check that the APK is from the same release channel as the installed WoW Forever Touch build. Android matches updates by application ID and signing certificate.
+- **Performance varies by device.** Use a lower **Resolution** in the launcher when testing on a new GPU or when the frame rate drops. The first visit to a zone can take longer while the game downloads assets.
 
----
+## Build from source
 
-## Building from source
-
-Requirements: JDK 17 and the Android SDK (with build-tools and platform-tools).
+Use JDK 17, Android SDK Platform 36, build-tools 35.0.0, and NDK 27.3.13750724. Point `local.properties` at your Android SDK.
 
 ```bash
-tools/fetch_components.sh           # Wine/Proton, DXVK and Turnip archives (~130 MB, not in git)
-./gradlew assembleModernRelease     # app/build/outputs/apk/modern/release/app-modern-release.apk
-./gradlew assembleModernDebug       # unminified debug build, faster to iterate on
+tools/fetch_components.sh
+python3 tools/trim_proton_i386.py app/src/main/assets/bundled_components/proton-11.0-90624-arm64ec.wcp
+./gradlew :app:assembleModernRelease :app:testModernReleaseUnitTest
 ```
 
-Release builds are signed with `app/keystores/keystore.properties` when it exists (`storeFile`, `storePassword`, `keyAlias`, `keyPassword`). Otherwise they fall back to the debug key. Builds signed with different keys can't update each other, so switching between them means uninstalling first.
+The APK is written to `app/build/outputs/apk/modern/release/`. The runtime download script verifies each component against `tools/components.sha256`. Build the ARM64 Wine login helper from source with an ARM64 MinGW toolchain if you change it. [Helper build and test instructions](tools/wow-session-bridge/README.md)
 
-`fetch_components.sh` downloads the pinned runtime archives referenced by the script and checks them against `tools/components.sha256`. Pass a local components directory if you already have the archives.
+A local release signing configuration can be provided in `app/keystores/keystore.properties`. Keep keystores and passwords outside version control. The published APK uses the WoW Forever Touch application ID `app.wowforever.mobile.touchhud`.
 
 ---
 
