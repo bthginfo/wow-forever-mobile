@@ -54,4 +54,21 @@ class GameConfigTest {
             configWtf(root).readLines().filter { it.contains("Resolution ") },
         )
     }
+
+    @Test
+    fun existingConfigStartsWithMouseAndKeyboardInterface() {
+        val root = install(
+            "eu",
+            "SET InputDeviceInterfaceStyle \"0\"\nSET GamePadEnable \"1\"\nSET InputDeviceInterfaceStyle \"1\"\n",
+        )
+
+        ensureGameConfig(root, "1920x1080", null)
+
+        val lines = configWtf(root).readLines()
+        assertEquals(
+            listOf("SET InputDeviceInterfaceStyle \"0\""),
+            lines.filter { it.startsWith("SET InputDeviceInterfaceStyle ") },
+        )
+        assertEquals(listOf("SET GamePadEnable \"1\""), lines.filter { it.startsWith("SET GamePadEnable ") })
+    }
 }

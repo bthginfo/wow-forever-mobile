@@ -65,41 +65,28 @@ import app.gamenative.ui.enums.Orientation
 import app.gamenative.ui.model.MainViewModel
 import app.gamenative.ui.screen.PluviaScreen
 import app.gamenative.ui.screen.wow.BattleNetSignIn
-import app.gamenative.ui.screen.wow.auth.BattleNetBrowserLogin
-import app.gamenative.ui.screen.wow.auth.BattleNetBrowserLoginHost
 import app.gamenative.ui.screen.wow.GamePath
 import app.gamenative.ui.screen.wow.WoWForeverScreen
-import app.gamenative.ui.screen.wow.WoWLauncherState
+import app.gamenative.ui.screen.wow.WowLoginMode
+import app.gamenative.ui.screen.wow.auth.BattleNetBrowserLogin
+import app.gamenative.ui.screen.wow.auth.BattleNetBrowserLoginHost
 import app.gamenative.ui.screen.xserver.XServerScreen
 import app.gamenative.ui.theme.PluviaTheme
 import app.gamenative.ui.util.LocalSnackbarHostController
 import app.gamenative.ui.util.SnackbarManager
-import app.gamenative.utils.Net
 import app.gamenative.utils.ContainerUtils
-import com.winlator.container.Container
-import com.winlator.container.ContainerData
-import com.winlator.container.ContainerManager
 import com.winlator.core.StringUtils
-import com.winlator.core.TarCompressorUtils
-import com.winlator.xenvironment.ImageFSLegacyMigrator
-import com.winlator.xenvironment.ImageFs
-import com.winlator.xenvironment.ImageFsInstaller
 import java.io.File
 import java.security.SecureRandom
 import java.util.Locale
 import java.util.Date
 import java.util.EnumSet
-import kotlin.reflect.KFunction2
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import timber.log.Timber
 
@@ -109,6 +96,7 @@ private const val SNACKBAR_SHOW_TIMEOUT_MS = 15_000L
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun PluviaMain(
+    onOpenLanguage: () -> Unit,
     viewModel: MainViewModel = hiltViewModel(),
     navController: NavHostController = rememberNavController(),
     lifecycleOwner: LifecycleOwner = LocalLifecycleOwner.current,
@@ -130,6 +118,8 @@ fun PluviaMain(
 
 
     var gameBackAction by remember { mutableStateOf<() -> Unit?>({}) }
+    var loginRetryRequested by remember { mutableStateOf<WowLoginMode?>(null) }
+    var browserLoginRequested by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         viewModel.uiEvent.collect { event ->
@@ -272,40 +262,14 @@ fun PluviaMain(
                 message = msgDialogState.message,
             )
 
-            var initialSplash by remember {
-                mutableStateOf(WoWLauncherState.shouldAutoLaunch && GamePath.isReady(context))
-            }
-            var preLaunchJob by remember { mutableStateOf<Job?>(null) }
-
-            DisposableEffect(Unit) {
-                val clearSplash: (AndroidEvent.ClearBootingSplash) -> Unit = { initialSplash = false }
-                val forceClose: (AndroidEvent.ForceCloseApp) -> Unit = {
-                    BattleNetBrowserLogin.cancel(preserveFailure = true)
-                    initialSplash = false
-                    preLaunchJob?.cancel()
-                    preLaunchJob = null
-                    WoWLauncherState.shouldAutoLaunch = false
-                }
-                PluviaApp.events.on<AndroidEvent.ClearBootingSplash, Unit>(clearSplash)
-                PluviaApp.events.on<AndroidEvent.ForceCloseApp, Unit>(forceClose)
-                onDispose {
-                    PluviaApp.events.off<AndroidEvent.ClearBootingSplash, Unit>(clearSplash)
-                    PluviaApp.events.off<AndroidEvent.ForceCloseApp, Unit>(forceClose)
-                }
-            }
-
             Box(modifier = Modifier.zIndex(10f)) {
                 BootingSplash(
-                    visible = state.showBootingSplash || initialSplash,
-                    text = if (state.showBootingSplash) state.bootingSplashText else "Booting into World of Warcraft...",
+                    visible = state.showBootingSplash,
+                    text = state.bootingSplashText,
                     onAbort = {
                         BattleNetBrowserLogin.cancel()
-                        initialSplash = false
-                        preLaunchJob?.cancel()
-                        preLaunchJob = null
                         BattleNetSignIn.removeLoginFile(File(GamePath.load(context)))
                         viewModel.setLoadingDialogVisible(false)
-                        WoWLauncherState.shouldAutoLaunch = false
                         viewModel.abortBoot()
                     },
                 )
@@ -319,20 +283,15 @@ fun PluviaMain(
             ) {
                 composable(route = PluviaScreen.WoWLauncher.route) {
                     WoWForeverScreen(
-                        onLaunch = { appId ->
+                        onOpenLanguage = onOpenLanguage,
+                        onLaunch = { appId, loginMode ->
+                            browserLoginRequested = loginMode == WowLoginMode.BROWSER
                             viewModel.setLaunchedAppId(appId)
                             viewModel.setOffline(true)
-                            preLaunchJob?.cancel()
-                            preLaunchJob = preLaunchApp(
-                                context = context,
-                                appId = appId,
-                                setLoadingDialogVisible = viewModel::setLoadingDialogVisible,
-                                setLoadingProgress = viewModel::setLoadingDialogProgress,
-                                setLoadingMessage = viewModel::setLoadingDialogMessage,
-                                setMessageDialogState = { msgDialogState = it },
-                                onSuccess = viewModel::launchApp,
-                            )
+                            viewModel.launchApp(context, appId)
                         },
+                        retryLoginRequested = loginRetryRequested,
+                        onLoginRetryHandled = { loginRetryRequested = null },
                     )
                 }
                 /** Game Screen **/
@@ -354,6 +313,8 @@ fun PluviaMain(
                     XServerScreen(
                         appId = state.launchedAppId,
                         isOffline = xServerIsOffline,
+                        browserLogin = browserLoginRequested,
+                        onRetryLogin = { loginRetryRequested = it },
                         registerBackAction = { cb ->
                             Timber.d("registerBackAction called: $cb")
                             gameBackAction = cb
@@ -380,10 +341,21 @@ fun PluviaMain(
                         onGameLaunchError = { error ->
                             BattleNetSignIn.removeLoginFile(File(GamePath.load(context)))
                             viewModel.onGameLaunchError(error)
+                            scope.launch {
+                                msgDialogState = MessageDialogState(
+                                    visible = true,
+                                    type = DialogType.SYNC_FAIL,
+                                    title = context.getString(R.string.mobile_game_launch_failed),
+                                    message = error,
+                                    dismissBtnText = context.getString(R.string.ok),
+                                )
+                            }
                         },
                     )
                 }
             }
+
+            BattleNetBrowserLoginHost()
 
             if (snackbarController.rootOwnsHost) {
                 SnackbarHost(
@@ -413,122 +385,6 @@ fun PluviaMain(
                 }
             }
 
-            BattleNetBrowserLoginHost()
         }
-    }
-}
-
-fun preLaunchApp(
-    context: Context,
-    appId: String,
-    setLoadingDialogVisible: (Boolean) -> Unit,
-    setLoadingProgress: (Float) -> Unit,
-    setLoadingMessage: (String) -> Unit,
-    setMessageDialogState: (MessageDialogState) -> Unit,
-    onSuccess: KFunction2<Context, String, Unit>,
-): Job {
-    setLoadingDialogVisible(true)
-
-    return CoroutineScope(Dispatchers.IO).launch {
-        val containerManager = ContainerManager(context)
-        val container = ContainerUtils.getOrCreateContainer(context, appId)
-        container.clearSessionMetadata()
-
-        val legacyImageFsRoot = File(context.filesDir, "imagefs")
-        val migrationOk = ImageFSLegacyMigrator.migrateLegacyDirsIfNeeded(
-            context,
-            legacyImageFsRoot,
-            container.wineVersion,
-        )
-        if (!migrationOk) {
-            Timber.tag("preLaunchApp").e(
-                "Legacy ImageFS migration failed: ${legacyImageFsRoot.absolutePath}",
-            )
-            setLoadingDialogVisible(false)
-            setMessageDialogState(
-                MessageDialogState(
-                    visible = true,
-                    type = DialogType.SYNC_FAIL,
-                    title = context.getString(R.string.install_failed_title),
-                    message = context.getString(R.string.install_failed_message),
-                    dismissBtnText = context.getString(R.string.ok),
-                ),
-            )
-            return@launch
-        }
-
-        val effectiveExe = container.executablePath
-        if (effectiveExe.isBlank()) {
-            Timber.tag("preLaunchApp").w("Cannot launch $appId: no executable found")
-            setLoadingDialogVisible(false)
-            setMessageDialogState(
-                MessageDialogState(
-                    visible = true,
-                    type = DialogType.EXECUTABLE_NOT_FOUND,
-                    title = context.getString(R.string.game_executable_not_found_title),
-                    message = context.getString(R.string.game_executable_not_found),
-                    dismissBtnText = context.getString(R.string.ok),
-                ),
-            )
-            return@launch
-        }
-
-
-        try {
-            val imageFsArchive = "imagefs_bionic.txz"
-            if (!File(context.filesDir, imageFsArchive).exists() && context.assets.list("")?.contains(imageFsArchive) != true) {
-                setLoadingMessage("Downloading first-time files")
-                Net.fetchFileWithFallback(imageFsArchive, File(context.filesDir, imageFsArchive), setLoadingProgress)
-            }
-        } catch (e: Exception) {
-            Timber.tag("preLaunchApp").e(e, "File download failed")
-            setLoadingDialogVisible(false)
-            setMessageDialogState(
-                MessageDialogState(
-                    visible = true,
-                    type = DialogType.SYNC_FAIL,
-                    title = context.getString(R.string.download_failed_title),
-                    message = e.message ?: context.getString(R.string.download_failed_message),
-                    dismissBtnText = context.getString(R.string.ok),
-                ),
-            )
-            return@launch
-        }
-
-        val loadingMessage = if (container.containerVariant.equals(Container.GLIBC)) {
-            context.getString(R.string.main_installing_glibc)
-        } else {
-            context.getString(R.string.main_installing_bionic)
-        }
-        setLoadingMessage(loadingMessage)
-        val imageFsInstallSuccess =
-            ImageFsInstaller.installIfNeededFuture(context, context.assets, container) { progress ->
-                setLoadingProgress(progress / 100f)
-            }.get()
-
-        if (!imageFsInstallSuccess) {
-            Timber.tag("preLaunchApp").e("ImageFS installation failed")
-            setLoadingDialogVisible(false)
-            setMessageDialogState(
-                MessageDialogState(
-                    visible = true,
-                    type = DialogType.SYNC_FAIL,
-                    title = context.getString(R.string.install_failed_title),
-                    message = context.getString(R.string.install_failed_message),
-                    dismissBtnText = context.getString(R.string.ok),
-                ),
-            )
-            return@launch
-        }
-
-        setLoadingMessage(context.getString(R.string.main_loading))
-        setLoadingProgress(-1f)
-
-        // must activate container before downloading save files
-        containerManager.activateContainer(container)
-
-        setLoadingDialogVisible(false)
-        if (!isActive) return@launch
-        onSuccess(context, appId)
     }
 }

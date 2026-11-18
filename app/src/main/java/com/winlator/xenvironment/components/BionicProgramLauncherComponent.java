@@ -6,6 +6,8 @@ import android.content.SharedPreferences;
 import android.media.Image;
 import android.net.ConnectivityManager;
 import android.net.InetAddresses;
+import android.net.LinkProperties;
+import android.net.Network;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
@@ -60,7 +62,8 @@ import app.gamenative.events.AndroidEvent;
 
 public class BionicProgramLauncherComponent extends GuestProgramLauncherComponent {
     private String guestExecutable;
-    private static int pid = -1;
+    private int pid = -1;
+    private Object activeRun;
     private String[] bindingPaths;
     private EnvVars envVars;
     private WineInfo wineInfo;
@@ -68,7 +71,7 @@ public class BionicProgramLauncherComponent extends GuestProgramLauncherComponen
     private String box64Preset = Box86_64Preset.COMPATIBILITY;
     private String fexcorePreset = FEXCorePreset.INTERMEDIATE;
     private Callback<Integer> terminationCallback;
-    private static final Object lock = new Object();
+    private final Object lock = new Object();
     private boolean wow64Mode = true;
     private final ContentsManager contentsManager;
     private final ContentProfile wineProfile;
@@ -130,18 +133,20 @@ public class BionicProgramLauncherComponent extends GuestProgramLauncherComponen
             else
                 extractBox64Files();
             if (preUnpack != null) preUnpack.run();
-            pid = execGuestProgram();
-            Log.d("BionicProgramLauncherComponent", "Process " + pid + " started");
-            PluviaApp.setKeepAlive(true);
+            execGuestProgram();
         }
     }
 
     @Override
     public void stop() {
         synchronized (lock) {
-            if (pid != -1) {
-                Process.killProcess(pid);
-                Log.d("BionicProgramLauncherComponent", "Stopped process " + pid);
+            int stoppedPid = pid;
+            // Retire the run before sending SIGKILL, whose wait callback may arrive during the next launch.
+            activeRun = null;
+            pid = -1;
+            if (stoppedPid != -1) {
+                Process.killProcess(stoppedPid);
+                Log.d("BionicProgramLauncherComponent", "Stopped process " + stoppedPid);
                 List<ProcessHelper.ProcessInfo> subProcesses = ProcessHelper.listSubProcesses();
                 for (ProcessHelper.ProcessInfo subProcess : subProcesses) {
                     Process.killProcess(subProcess.pid);
@@ -210,7 +215,7 @@ public class BionicProgramLauncherComponent extends GuestProgramLauncherComponen
         this.workingDir = workingDir;
     }
 
-    private int execGuestProgram() {
+    private void execGuestProgram() {
         ImageFs imageFs = environment.getImageFs();
         final int MAX_PLAYERS = 4;
 
@@ -318,10 +323,10 @@ public class BionicProgramLauncherComponent extends GuestProgramLauncherComponen
 
         String primaryDNS = "8.8.4.4";
         ConnectivityManager connectivityManager = (ConnectivityManager) context.getSystemService(Service.CONNECTIVITY_SERVICE);
-        if (connectivityManager.getActiveNetwork() != null) {
-            ArrayList<InetAddress> dnsServers = new ArrayList<>(connectivityManager.getLinkProperties(connectivityManager.getActiveNetwork()).getDnsServers());
-
-            // Check if the dnsServers list is not empty before getting an item
+        Network activeNetwork = connectivityManager == null ? null : connectivityManager.getActiveNetwork();
+        LinkProperties linkProperties = activeNetwork == null ? null : connectivityManager.getLinkProperties(activeNetwork);
+        if (linkProperties != null) {
+            List<InetAddress> dnsServers = linkProperties.getDnsServers();
             if (!dnsServers.isEmpty()) {
                 InetAddress selectedDNS = dnsServers.get(0);
                 for (InetAddress dnsServer : dnsServers) {
@@ -405,13 +410,7 @@ public class BionicProgramLauncherComponent extends GuestProgramLauncherComponen
             }
         }
 
-        try {
-            ContainerOverlay.applyBionicLaunchEnv(context, container, envVars);
-        }
-        catch (IllegalStateException e) {
-            Log.e("BionicProgramLauncherComponent", e.getMessage());
-            return -1;
-        }
+        ContainerOverlay.applyBionicLaunchEnv(context, container, envVars);
 
         Log.d("BionicProgramLauncherComponent", "env vars are " + EnvVarRedaction.redact(envVars));
 
@@ -436,16 +435,32 @@ public class BionicProgramLauncherComponent extends GuestProgramLauncherComponen
             FileUtils.chmod(box64File, 0755);
         }
 
-        return ProcessHelper.exec(command, envVars.toStringArray(), workingDir != null ? workingDir : rootDir, (status) -> {
-            synchronized (lock) {
-                pid = -1;
+        launchGuestProcess(command, envVars.toStringArray(), workingDir != null ? workingDir : rootDir);
+    }
+
+    void launchGuestProcess(String command, String[] environmentVariables, File directory) {
+        synchronized (lock) {
+            Handler mainHandler = new Handler(Looper.getMainLooper());
+            Object run = new Object();
+            activeRun = run;
+            pid = ProcessHelper.exec(command, environmentVariables, directory, status ->
+                    mainHandler.post(() -> {
+                        Callback<Integer> callback;
+                        synchronized (lock) {
+                            if (activeRun != run) return;
+                            activeRun = null;
+                            pid = -1;
+                            if (environment.isWinetricksRunning()) return;
+                            PluviaApp.setKeepAlive(false);
+                            callback = terminationCallback;
+                        }
+                        if (callback != null) callback.call(status);
+                    }));
+            if (pid != -1) {
+                Log.d("BionicProgramLauncherComponent", "Process " + pid + " started");
+                PluviaApp.setKeepAlive(true);
             }
-            if (!environment.isWinetricksRunning()) {
-                PluviaApp.setKeepAlive(false);
-                if (terminationCallback != null)
-                    terminationCallback.call(status);
-            }
-        });
+        }
     }
 
     @NonNull
@@ -613,9 +628,11 @@ public class BionicProgramLauncherComponent extends GuestProgramLauncherComponen
     }
 
     public void restartWineServer() {
-        ProcessHelper.terminateAllWineProcesses();
-        pid = execGuestProgram();
-        Log.d("BionicProgramLauncherComponent", "Wine restarted successfully");
-
+        synchronized (lock) {
+            activeRun = null;
+            pid = -1;
+            ProcessHelper.terminateAllWineProcesses();
+            execGuestProgram();
+        }
     }
 }

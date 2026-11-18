@@ -60,6 +60,12 @@ Build with LLVM-MinGW 20261104 (Clang 23.1.5), ARM64 Windows UCRT. The ARM64 hel
 uses the Wine emulator for CPUID and Windows APIs. Its fingerprint must match the
 authentication platform used by the Android broker; ARM64 client compatibility
 still needs on-device validation. PE timestamps are disabled for reproducibility.
+
+The Mobile APK ships a helper built with Android NDK 27.3.13750724, MinGW-w64
+13.0 UCRT headers and the ARM64 import libraries from its bundled Proton runtime.
+Use `build-with-ndk.sh <ndk-llvm-bin> <mingw-ucrt-include> <proton.wcp> <output.exe>`
+to reproduce that build.
+
 The integration test creates a disposable Wine prefix and uses a synthetic token
 with a dummy child to verify transport, DPAPI, launch refusal, and cleanup. It does
 not contact Battle.net or use account credentials.

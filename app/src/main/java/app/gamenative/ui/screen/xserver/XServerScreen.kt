@@ -1,7 +1,5 @@
 package app.gamenative.ui.screen.xserver
 
-import app.gamenative.ui.screen.wow.auth.BattleNetBrowserLogin
-
 import android.app.Activity
 import android.content.Context
 import android.graphics.Color
@@ -88,6 +86,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import app.gamenative.PluviaApp
 import app.gamenative.PrefManager
 import app.gamenative.data.GyroSettings
@@ -108,7 +107,11 @@ import app.gamenative.ui.data.PerformanceHudConfig
 import app.gamenative.ui.data.PerformanceHudSize
 import app.gamenative.ui.data.XServerState
 import app.gamenative.GameSessionService
+import app.gamenative.ui.screen.wow.LoginObservation
+import app.gamenative.ui.screen.wow.MobileLaunchDiagnostics
+import app.gamenative.ui.screen.wow.WowLoginMode
 import app.gamenative.ui.screen.wow.WowMachineIdentity
+import app.gamenative.ui.screen.wow.auth.BattleNetBrowserLogin
 import app.gamenative.ui.widget.PerformanceHudView
 import app.gamenative.utils.AssetUtils
 import app.gamenative.utils.ContainerUtils
@@ -404,7 +407,7 @@ private fun SyncGyroOverlaySuppression(suppressed: Boolean, viewKey: XServerRend
 
 @Composable
 @OptIn(ExperimentalComposeUiApi::class)
-fun XServerScreen(
+internal fun XServerScreen(
     lifecycleOwner: LifecycleOwner = LocalLifecycleOwner.current,
     appId: String,
     isOffline: Boolean = false,
@@ -414,11 +417,24 @@ fun XServerScreen(
     onWindowMapped: ((Context, Window) -> Unit)? = null,
     onWindowUnmapped: ((Window) -> Unit)? = null,
     onGameLaunchError: ((String) -> Unit)? = null,
+    onRetryLogin: (WowLoginMode) -> Unit = {},
+    browserLogin: Boolean = false,
 ) {
     Timber.i("Starting up XServerScreen")
     val context = LocalContext.current
     val view = LocalView.current
     val scope = rememberCoroutineScope()
+    val mobileControls = remember(appId) { MobileTouchControls.create(ViewConfiguration.get(context)) }
+    DisposableEffect(lifecycleOwner, mobileControls) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_PAUSE) mobileControls.releaseAll()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            mobileControls.releaseAll()
+        }
+    }
     val imm = remember(context) {
         context.getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
     }
@@ -512,6 +528,20 @@ fun XServerScreen(
 
     var swapInputOverlay: SwapInputOverlayView? by remember { mutableStateOf(null) }
     var imeInputReceiver: app.gamenative.externaldisplay.IMEInputReceiver? by remember { mutableStateOf(null) }
+    var loginObservation by remember(appId) { mutableStateOf<LoginObservation?>(null) }
+    LaunchedEffect(appId, lifecycleOwner, mobileControls) {
+        lifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                val latest = withContext(Dispatchers.IO) { MobileLaunchDiagnostics.connection() }
+                if (latest?.state != loginObservation?.state && latest?.state?.showsLoginControls == true) {
+                    if (mobileControls.chatting) imeInputReceiver?.hideKeyboard()
+                    mobileControls.useLoginControls()
+                }
+                loginObservation = latest
+                delay(1_200L)
+            }
+        }
+    }
 
     var win32AppWorkarounds: Win32AppWorkarounds? by remember { mutableStateOf(null) }
     var physicalControllerHandler: PhysicalControllerHandler? by remember { mutableStateOf(null) }
@@ -1387,6 +1417,17 @@ fun XServerScreen(
             return@gameBack
         }
 
+        if (mobileControls.chatting) {
+            imeInputReceiver?.hideKeyboard()
+            mobileControls.closeChat()
+            return@gameBack
+        }
+
+        if (mobileControls.hudEditor != null) {
+            mobileControls.closeHudEditor()
+            return@gameBack
+        }
+
         if (showQuickMenu) {
             dismissOverlayMenuOnBack()
             return@gameBack
@@ -1619,7 +1660,7 @@ fun XServerScreen(
     }
     val onGuestProgramTerminated: (AndroidEvent.GuestProgramTerminated) -> Unit = {
         Timber.i("onGuestProgramTerminated")
-        exit(xServerView!!.getxServer().winHandler, frameRating, container, appId, onExit, navigateBack, "guest_terminated")
+        exit(xServerView?.getxServer()?.winHandler, frameRating, container, appId, onExit, navigateBack, "guest_terminated")
     }
     val onForceCloseApp: (AndroidEvent.ForceCloseApp) -> Unit = {
         Timber.i("onForceCloseApp")
@@ -1825,6 +1866,9 @@ fun XServerScreen(
                     ?.dispatchTouchEvent(event) == true
                 if (overlayHandled) return@pointerInteropFilter true
 
+                if (!isPortrait && !areControlsVisible && !showQuickMenu && mobileControls.route(event)) {
+                    return@pointerInteropFilter true
+                }
                 if (isPortrait) {
                     gameRoot?.dispatchTouchEvent(event)
                 } else {
@@ -1911,6 +1955,7 @@ fun XServerScreen(
                 }
                 getxServer().renderer = renderer
                 PluviaApp.touchpadView = TouchpadView(context, getxServer(), PrefManager.getBoolean("capture_pointer_on_external_mouse", true))
+                    .also { mobileControls.attach(getxServer(), it) }
                 PluviaApp.touchpadView?.setMoveCursorToTouchpoint(PrefManager.getBoolean("move_cursor_to_touchpoint", false))
 
                 // Wire keyboard toggle callback for gesture "Show Keyboard" action.
@@ -2039,7 +2084,8 @@ fun XServerScreen(
                         override fun onUpdateWindowContent(window: Window) {
                             if (!xServerState.value.winStarted && window.isApplicationWindow()) {
                                 if (shouldShowMouseCursor()) renderer?.setCursorVisible(true)
-                                xServerState.value.winStarted = true
+                                xServerState.value = xServerState.value.copy(winStarted = true)
+                                MobileLaunchDiagnostics.firstWindowContent()
                             }
                             if (!getxServer().isFlatPresentationEnabled) return
                             if (frameRatingWindowId == -1 && window.isApplicationWindow()) {
@@ -2228,7 +2274,7 @@ fun XServerScreen(
                             changeWineAudioDriver(xServerState.value.audioDriver, container, ImageFs.find(context))
                             setImagefsContainerVariant(context, container)
                             if (isExiting.get()) return@submit
-                            PluviaApp.xEnvironment = setupXEnvironment(
+                            val environment = setupXEnvironment(
                                 context,
                                 appId,
                                 xServerState,
@@ -2238,8 +2284,14 @@ fun XServerScreen(
                                 containerVariantChanged,
                                 onGameLaunchError,
                                 isOffline,
+                                browserLogin,
                             )
-                            GameSessionService.ensureStarted(context.applicationContext)
+                            PluviaApp.xEnvironment = environment
+                            view.post {
+                                if (PluviaApp.xEnvironment === environment && !isExiting.get()) {
+                                    GameSessionService.ensureStarted(context.applicationContext)
+                                }
+                            }
 
                             if (!PluviaApp.isActivityInForeground && !neverSuspend) {
                                 PluviaApp.xEnvironment?.onPause()
@@ -2253,6 +2305,7 @@ fun XServerScreen(
                                 }
                             }
                         } catch (e: Exception) {
+                            if (browserLogin) BattleNetBrowserLogin.cancel(preserveFailure = true)
                             Timber.e(e, "Error during wine setup operations")
                             try {
                                 PluviaApp.xEnvironment?.stopEnvironmentComponents()
@@ -2576,6 +2629,7 @@ fun XServerScreen(
             }
         },
         onRelease = { view ->
+            mobileControls.detach()
             PluviaApp.inputControlsView?.setGyroForeground(false)
             gameRoot = null
             removePerformanceHud()
@@ -2704,6 +2758,23 @@ fun XServerScreen(
                 }
             )
         }
+
+        fun retryLogin(mode: WowLoginMode) {
+            if (xServerView == null || isExiting.get()) return
+            onRetryLogin(mode)
+            onQuickMenuItemSelected(QuickMenuAction.EXIT_GAME)
+        }
+
+        MobileGameOverlay(
+            controls = mobileControls,
+            receiver = imeInputReceiver,
+            visible = !showQuickMenu && !isEditMode && !showElementEditor,
+            canPlayWithTouch = !isPortrait && !areControlsVisible,
+            loginFailed = loginObservation?.state?.phase == R.string.mobile_diagnostics_error,
+            browserConnectionStalled = loginObservation?.browserStalled == true,
+            onRetryLogin = { retryLogin(WowLoginMode.MANUAL) },
+            onRetryBrowserLogin = { retryLogin(WowLoginMode.BROWSER) },
+        )
 
         QuickMenu(
             isVisible = showQuickMenu,
@@ -3568,6 +3639,7 @@ private fun setupXEnvironment(
     containerVariantChanged: Boolean,
     onGameLaunchError: ((String) -> Unit)? = null,
     offline: Boolean = false,
+    browserLogin: Boolean = false,
 ): XEnvironment {
     ProcessHelper.hardKillStaleWineProcesses()
 
@@ -3658,14 +3730,12 @@ private fun setupXEnvironment(
         val wow64Mode = container.isWoW64Mode
         guestProgramLauncherComponent.setContainer(container)
         guestProgramLauncherComponent.setWineInfo(xServerState.value.wineInfo)
-        val directCommand = getWineStartCommand(context, appId, container, envVars, guestProgramLauncherComponent) +
-            (if (container.execArgs.isNotEmpty()) " " + container.execArgs else "")
-        val browserLogin = if (BattleNetBrowserLogin.enabled(context)) {
+        val launchCommand = if (browserLogin) {
             BattleNetBrowserLogin.start(context, container)
         } else {
-            null
+            getWineStartCommand(context, appId, container, envVars, guestProgramLauncherComponent) +
+                (if (container.execArgs.isNotEmpty()) " " + container.execArgs else "")
         }
-        val launchCommand = browserLogin?.command ?: directCommand
         val gameExecutable = "wine explorer /desktop=shell," + xServer.screenInfo + " " + launchCommand
         guestProgramLauncherComponent.guestExecutable = gameExecutable
         guestProgramLauncherComponent.isWoW64Mode = wow64Mode
@@ -3704,7 +3774,7 @@ private fun setupXEnvironment(
                 container.saveData()
             }
             if (!isExiting.get()) {
-                PluviaApp.events.emit(AndroidEvent.SetBootingSplashText("Launching game..."))
+                PluviaApp.events.emit(AndroidEvent.SetBootingSplashText(context.getString(R.string.mobile_launcher_starting)))
             }
         }
 
@@ -3789,11 +3859,12 @@ private fun setupXEnvironment(
     guestProgramLauncherComponent.envVars = EnvVars().apply { putAll(envVars) }
 
     val gameTerminationCallback = Callback<Int> { status ->
-        // Record the status for this launch before error handling or screen cleanup cancels sign-in.
-        browserLogin?.onExit?.invoke(status)
+        if (isExiting.get()) return@Callback
+        val browserFailureReported = browserLogin && BattleNetBrowserLogin.guestExited()
         if (status != 0) {
             Timber.e("Guest program terminated with status: $status")
-            onGameLaunchError?.invoke("Game terminated with error status: $status")
+            MobileLaunchDiagnostics.guestExited(status, PluviaApp.isActivityInForeground, GameSessionService.isForeground)
+            if (!browserFailureReported) onGameLaunchError?.invoke(context.getString(R.string.mobile_game_exit_status, status))
         }
         PluviaApp.events.emit(AndroidEvent.GuestProgramTerminated)
     }
@@ -3830,7 +3901,6 @@ private fun setupXEnvironment(
     try {
         environment.startEnvironmentComponents()
     } catch (e: Exception) {
-        BattleNetBrowserLogin.cancel()
         Timber.e(e, "Failed to start environment components, cleaning up")
         try {
             environment.stopEnvironmentComponents()
@@ -3968,6 +4038,7 @@ private fun exit(
     }
     frameRating?.writeSessionSummary()
     onExit(null)
+    PluviaApp.events.emit(AndroidEvent.GameSessionEnded)
     isExiting.set(false)
     navigateBack()
 }

@@ -38,15 +38,15 @@ android {
     }
 
     defaultConfig {
-        applicationId = "app.wowforever"
+        applicationId = "app.wowforever.mobile.touchhud"
 
         minSdk = 26
 
         manifestPlaceholders["screenOrientation"] = "unspecified"
         buildConfigField("boolean", "XR_BUILD", "false")
 
-        versionCode = 248
-        versionName = "2.4.5"
+        versionCode = 258
+        versionName = "2.4.4-mobile.13"
 
         buildConfigField("boolean", "GOLD", "false")
         val iconValue = "@mipmap/ic_launcher"
@@ -162,15 +162,6 @@ android {
         // default locale. These extra translations are harmless and pre-existing; without this
         // the release-only lintVital pass fails on 150+ ExtraTranslation errors.
         disable += "ExtraTranslation"
-    }
-
-    // Configure Assets to be used in different variants
-    sourceSets {
-        getByName("modern") {
-            assets {
-                srcDirs("src/modern/assets", "src/main/assets")
-            }
-        }
     }
 
     kotlinter {

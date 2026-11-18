@@ -1,0 +1,8 @@
+## Interface: 16001
+## Title: Forever Touch
+## Notes: Two touch-friendly arcs with independent spell and item slots
+## Version: 2.6
+## SavedVariablesPerCharacter: ForeverTouchPreferences
+ForeverTouchActions.lua
+ForeverTouchPicker.lua
+ForeverTouchMobileLayout.lua

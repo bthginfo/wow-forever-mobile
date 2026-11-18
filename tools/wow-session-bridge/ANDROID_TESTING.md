@@ -1,9 +1,9 @@
 # Experimental Android browser session login
 
-This branch implements a candidate alternative to direct password login for
+This branch uses browser login as the standard launch path for
 [issue #57](https://github.com/jaredgei/wow-forever-android/issues/57).
-It does not establish the server-side reason for BLZ51914400 or claim that the
-ARM64 game accepts the token. The browser mode is off by default.
+It includes the redirect, argument and window fixes in
+[pull request #95](https://github.com/jaredgei/wow-forever-android/pull/95).
 
 ## Implemented path
 
@@ -13,7 +13,7 @@ ARM64 game accepts the token. The browser mode is off by default.
    client/server proofs derived from a random 256-bit capability. The capability
    is held in app-private storage and deleted after the helper reads it.
 3. Connect to the selected region's BGS service over hostname-verified TLS,
-   using the installed game build and the helper's `Wn64` context.
+   using the installed game build and the helper's `WinA` context.
 4. Display the server's HTTPS Battle.net browser challenge. Read only the final
    main-frame `http://localhost:0/?ST=...` navigation, not form contents.
 5. Reconnect, request a challenge, verify the one-use browser ticket and wait for
@@ -35,9 +35,11 @@ read the Battle.net desktop app's stored credentials.
 - Use a test APK with this branch. Locally signed builds cannot update an
   official APK signed by another key. Preserve game files and avoid resetting a
   working installation just to compare identities.
-- Leave browser login off and confirm the existing launch path is unchanged.
-- Turn it on, press Play, and complete Battle.net's own page. Confirm the game
+- Select **Sign in directly in WoW** to check the direct login path.
+- Select **Play** and complete Battle.net's own page. Confirm the game
   reaches character selection and its Connection.log reports `usedToken=true`.
+- At the second-factor prompt, select **Authenticator**, then return to WoW.
+  Confirm the same prompt is visible and accepts the authenticator code.
 - Fully exit and launch again. Confirm both launches succeed without creating
   `_forever_/login.txt`. A first successful login alone is not sufficient.
 - Test cancellation during page load, authenticator entry, and the final handoff.

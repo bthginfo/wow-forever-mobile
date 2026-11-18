@@ -1,16 +1,22 @@
 package app.gamenative.ui.screen.wow.auth
 
 import android.content.Context
+import android.content.res.Resources
+import androidx.annotation.StringRes
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.gamenative.PluviaApp
+import app.gamenative.R
 import app.gamenative.events.AndroidEvent
 import app.gamenative.ui.screen.wow.BattleNetSignIn
 import app.gamenative.ui.screen.wow.GameRegion
+import app.gamenative.ui.screen.wow.MobileLaunchDiagnostics
 import app.gamenative.ui.screen.wow.WowClientDownloader
 import com.winlator.container.Container
 import kotlinx.coroutines.CancellationException
@@ -33,7 +39,6 @@ import java.util.concurrent.atomic.AtomicReference
 
 /** Opt-in browser authentication. Tokens never enter game files, arguments, preferences, or logs. */
 internal object BattleNetBrowserLogin {
-    private const val PREFS = "battle_net_browser_login"
     private const val ASSET = "wow-session-bridge.exe"
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mutableUi = MutableStateFlow<Ui>(Ui.Idle)
@@ -42,26 +47,24 @@ internal object BattleNetBrowserLogin {
 
     sealed interface Ui {
         data object Idle : Ui
-        class Waiting(val text: String) : Ui
+        class Waiting(@StringRes val label: Int) : Ui
         // Deliberately no generated toString: a challenge URL is sensitive.
-        class Browser(val url: String) : Ui
+        class Browser(val url: String) : Ui {
+            val page = BattleNetWebPage(
+                url,
+                onTicket = { BattleNetBrowserLogin.submit(this, it) },
+                onError = { BattleNetBrowserLogin.webError(this, it) },
+            )
+        }
         class Failed(val text: String) : Ui
-    }
-
-    /** The callback belongs to this launch even if sign-in is cancelled or another attempt starts. */
-    class Launch(val command: String, val onExit: (Int) -> Unit)
-
-    fun enabled(context: Context): Boolean = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        .getBoolean("enabled", false)
-
-    fun setEnabled(context: Context, enabled: Boolean) {
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean("enabled", enabled).apply()
     }
 
     /** Runs after Wine prefix initialization. Container executable remains the game for window tracking. */
     @Synchronized
-    fun start(context: Context, container: Container): Launch {
+    fun start(context: Context, container: Container): String {
         cancel()
+        val gamePath = container.executablePath
+        check(' ' !in gamePath) { "The game path can't contain spaces for browser login" }
         val gameRoot = Container.drivesIterator(container.drives).asSequence()
             .firstOrNull { it[0].equals("G", ignoreCase = true) }?.let { File(it[1]) }
             ?: throw IOException("Cannot locate the game drive for browser login")
@@ -89,24 +92,22 @@ internal object BattleNetBrowserLogin {
                 "Cannot protect the browser login request"
             }
             val log = File(gameRoot, "${WowClientDownloader.FLAVOR_DIR}/Logs/BrowserLogin.log")
-            val attempt = Attempt(bridge, request, "${region.name}.actual.battle.net", build, log)
+            val attempt = Attempt(bridge, request, "${region.name}.actual.battle.net", build, log, context.resources)
             diag(attempt, "browser login started (app ${app.gamenative.BuildConfig.VERSION_NAME}, ${region.name}, build $build)")
             active = attempt
-            mutableUi.value = Ui.Waiting("Starting Battle.net browser login…")
+            val starting = R.string.mobile_browser_starting
+            publish(attempt, Ui.Waiting(starting), starting)
             // One deadline covers Wine startup, queues and browser interaction, below the helper's 15 minutes.
             attempt.watchdog = scope.launch {
                 delay(10 * 60_000L)
-                fail(attempt, "Browser login timed out. Please try again.")
+                fail(attempt, attempt.resources.getString(R.string.mobile_browser_error_timeout))
             }
             attempt.job = scope.launch { run(attempt) }
             // These arguments contain paths and public switches only. The token travels over the authenticated socket.
             // No quotes: ProcessHelper.splitCommand keeps quote characters, so Wine would get them as part of each
             // path and couldn't find the helper. None of these paths contain spaces.
-            val gamePath = container.executablePath
-            check(' ' !in gamePath) { "The game path can't contain spaces for browser login" }
-            val command = "C:\\wow-session\\$ASSET C:\\wow-session\\${request.name} " +
+            return "C:\\wow-session\\$ASSET C:\\wow-session\\${request.name} " +
                 "$gamePath -launcherlogin -uid ${WowClientDownloader.TARGET_PRODUCT} -d3d11"
-            return Launch(command) { status -> guestExited(attempt, status) }
         } catch (error: Exception) {
             bridge.close()
             request.delete()
@@ -126,11 +127,12 @@ internal object BattleNetBrowserLogin {
                     client.webChallenge(device, attempt.build)
                 }
                 diag(attempt, "showing the Battle.net sign-in page")
-                publish(attempt, Ui.Browser(url))
+                publish(attempt, Ui.Browser(url), R.string.mobile_browser_page)
                 val ticket = withTimeout(15 * 60_000L) { attempt.ticket.await() }
                 diag(attempt, "sign-in page finished")
                 try {
-                    publish(attempt, Ui.Waiting("Completing Battle.net sign-in…"))
+                    val verifying = R.string.mobile_browser_verifying
+                    publish(attempt, Ui.Waiting(verifying), verifying)
                     // A fresh connection avoids holding a BGS socket open while the user handles CAPTCHA or 2FA.
                     val token = withClient(attempt) { client ->
                         client.connect()
@@ -139,7 +141,8 @@ internal object BattleNetBrowserLogin {
                     }
                     try {
                         diag(attempt, "Battle.net issued a game session; handing it to the helper")
-                        publish(attempt, Ui.Waiting("Starting WoW with the Battle.net session…"))
+                        val launching = R.string.mobile_browser_launching
+                        publish(attempt, Ui.Waiting(launching), launching)
                         peer.launch(token)
                     } finally {
                         token.fill(0)
@@ -149,22 +152,20 @@ internal object BattleNetBrowserLogin {
                     device.fill(0)
                 }
                 diag(attempt, "the game started with the Battle.net session")
-                publish(attempt, Ui.Idle)
+                publish(attempt, Ui.Idle, R.string.mobile_browser_handed_off)
             }
         } catch (_: TimeoutCancellationException) {
-            fail(attempt, "Browser login timed out. Please try again.")
+            fail(attempt, attempt.resources.getString(R.string.mobile_browser_error_timeout))
         } catch (_: CancellationException) {
             // User cancellation does not turn into a password-login attempt.
         } catch (error: BgsException) {
             diag(attempt, "Battle.net error: ${error.message}")
-            fail(attempt, error.message ?: "Battle.net sign-in failed.")
+            fail(attempt, error.message ?: attempt.resources.getString(R.string.mobile_browser_failed))
         } catch (error: Exception) {
-            // Closing the listener during exit/cancellation can interrupt accept with SocketException.
-            if (attempt.cancelled) return
             // The exception type only: messages can carry provider payloads or addresses.
             diag(attempt, "stopped: ${error.javaClass.simpleName}")
             // Never expose provider payloads, redirect URLs, credentials or arbitrary peer output.
-            fail(attempt, "Browser sign-in could not start the game. You can retry or switch back to password login in the launcher.")
+            fail(attempt, attempt.resources.getString(R.string.mobile_browser_error_launch))
         } finally {
             attempt.close()
             synchronized(this) { if (active === attempt) active = null }
@@ -197,13 +198,23 @@ internal object BattleNetBrowserLogin {
         runCatching {
             attempt.log.parentFile?.mkdirs()
             val time = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.ROOT).format(java.util.Date())
-            attempt.log.appendText("$time app: [${attempt.id}] $message\n")
+            attempt.log.appendText("$time app: $message\n")
         }
     }
 
     @Synchronized
-    private fun publish(attempt: Attempt, state: Ui) {
-        if (active === attempt && !attempt.cancelled) mutableUi.value = state
+    private fun publish(attempt: Attempt, state: Ui, @StringRes step: Int) {
+        if (active !== attempt || attempt.cancelled) return
+        MobileLaunchDiagnostics.browserStep(step)
+        updateUi(state)
+    }
+
+    // All callers hold the coordinator lock. Only switching attempts or completing one releases the page.
+    private fun updateUi(state: Ui) {
+        val previous = mutableUi.value
+        if (previous === state) return
+        mutableUi.value = state
+        (previous as? Ui.Browser)?.page?.close()
     }
 
     @Synchronized
@@ -220,12 +231,15 @@ internal object BattleNetBrowserLogin {
     @Synchronized
     fun cancel(preserveFailure: Boolean = false) {
         active?.let { attempt ->
+            if (mutableUi.value !is Ui.Failed && mutableUi.value !is Ui.Idle) {
+                MobileLaunchDiagnostics.browserStep(R.string.mobile_browser_cancelled)
+            }
             attempt.cancelled = true
             attempt.close()
             attempt.job?.cancel()
         }
         active = null
-        if (!preserveFailure || mutableUi.value !is Ui.Failed) mutableUi.value = Ui.Idle
+        if (!preserveFailure || mutableUi.value !is Ui.Failed) updateUi(Ui.Idle)
     }
 
     @Synchronized
@@ -233,7 +247,7 @@ internal object BattleNetBrowserLogin {
         if (mutableUi.value !== state) return
         cancel()
         // Closing the control socket alone cannot stop a helper that has already received the token.
-        PluviaApp.events.emit(AndroidEvent.ForceCloseApp)
+        if (state !is Ui.Failed) PluviaApp.events.emit(AndroidEvent.ForceCloseApp)
     }
 
     @Synchronized
@@ -245,7 +259,7 @@ internal object BattleNetBrowserLogin {
     private fun fail(attempt: Attempt, message: String) {
         if (active !== attempt || attempt.cancelled || mutableUi.value is Ui.Idle) return
         val failure = Ui.Failed(message)
-        mutableUi.value = failure
+        publish(attempt, failure, R.string.mobile_browser_failed)
         cancel(preserveFailure = true)
         scope.launch(Dispatchers.Main.immediate) {
             synchronized(this@BattleNetBrowserLogin) {
@@ -256,19 +270,20 @@ internal object BattleNetBrowserLogin {
     }
 
     @Synchronized
-    private fun guestExited(attempt: Attempt, status: Int) {
-        if (attempt.exitRecorded) return
-        attempt.exitRecorded = true
-        // This is the outer Wine launch status, not necessarily the Windows helper's exit code.
-        // ProcessHelper also reports -1 when launching the process fails. Preserve it verbatim.
-        diag(attempt, "Wine launch exit status: $status")
-        if (active !== attempt || attempt.cancelled) return
-        if (mutableUi.value !is Ui.Idle && mutableUi.value !is Ui.Failed) {
-            mutableUi.value = Ui.Failed(
-                "The Wine launch stopped before sign-in completed (status $status). Details are in _forever_/Logs/BrowserLogin.log.",
+    fun guestExited(): Boolean {
+        val attempt = active
+        val failedBeforeSignIn = attempt != null && mutableUi.value !is Ui.Idle && mutableUi.value !is Ui.Failed
+        if (attempt != null && failedBeforeSignIn) {
+            diag(attempt, "the Wine side exited before sign-in completed")
+            publish(
+                attempt,
+                Ui.Failed(attempt.resources.getString(R.string.mobile_browser_error_wine, "_forever_/Logs/BrowserLogin.log")),
+                R.string.mobile_browser_failed,
             )
         }
+        val hasFailure = mutableUi.value is Ui.Failed
         cancel(preserveFailure = true)
+        return hasFailure
     }
 
     private class Attempt(
@@ -277,10 +292,8 @@ internal object BattleNetBrowserLogin {
         val host: String,
         val build: Int,
         val log: File,
+        val resources: Resources,
     ) {
-        // The request filename's random ID is independent of the private socket capability.
-        val id = request.name.removePrefix("request-").removeSuffix(".txt")
-        var exitRecorded = false // Accessed only by the synchronized exit callback.
         val ticket = CompletableDeferred<ByteArray>()
         val client = AtomicReference<BgsClient?>()
         val ticketBytes = AtomicReference<ByteArray?>()
@@ -304,23 +317,22 @@ internal fun BattleNetBrowserLoginHost() {
     val state by BattleNetBrowserLogin.ui.collectAsStateWithLifecycle()
     when (val current = state) {
         BattleNetBrowserLogin.Ui.Idle -> Unit
-        is BattleNetBrowserLogin.Ui.Browser -> BattleNetWebDialog(
-            url = current.url,
-            onTicket = { BattleNetBrowserLogin.submit(current, it) },
-            onCancel = { BattleNetBrowserLogin.abort(current) },
-            onError = { BattleNetBrowserLogin.webError(current, it) },
-        )
+        is BattleNetBrowserLogin.Ui.Browser -> BattleNetWebDialog(current)
         else -> AlertDialog(
             onDismissRequest = { BattleNetBrowserLogin.abort(current) },
-            title = { Text("Battle.net browser login") },
+            properties = DialogProperties(
+                dismissOnBackPress = current is BattleNetBrowserLogin.Ui.Failed,
+                dismissOnClickOutside = false,
+            ),
+            title = { Text(stringResource(R.string.mobile_browser_login)) },
             text = { Text(when (current) {
-                is BattleNetBrowserLogin.Ui.Waiting -> current.text
+                is BattleNetBrowserLogin.Ui.Waiting -> stringResource(current.label)
                 is BattleNetBrowserLogin.Ui.Failed -> current.text
                 else -> ""
             }) },
             confirmButton = {
                 TextButton(onClick = { BattleNetBrowserLogin.abort(current) }) {
-                    Text(if (current is BattleNetBrowserLogin.Ui.Failed) "Close" else "Cancel")
+                    Text(stringResource(if (current is BattleNetBrowserLogin.Ui.Failed) android.R.string.ok else android.R.string.cancel))
                 }
             },
         )

@@ -16,6 +16,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
 class ImageFsInstallerTest {
@@ -26,6 +27,22 @@ class ImageFsInstallerTest {
     @After
     fun tearDown() {
         sharedDir.deleteRecursively()
+    }
+
+    @Test
+    @Config(sdk = [34], application = android.app.Application::class)
+    fun configuredRuntimeIsReusedForTheSameVariant() {
+        val root = Files.createTempDirectory("runtime-variant").toFile()
+        try {
+            val image = ImageFs.find(root)
+            image.createImgVersionFile(ImageFsInstaller.LATEST_VERSION.toInt())
+            assertTrue(ImageFsInstaller.requiresInstall(image, "bionic"))
+            image.createVariantFile("bionic")
+            assertFalse(ImageFsInstaller.requiresInstall(image, "bionic"))
+            assertTrue(ImageFsInstaller.requiresInstall(image, "glibc"))
+        } finally {
+            root.deleteRecursively()
+        }
     }
 
     @Test

@@ -66,6 +66,8 @@ object AppUpdater {
     }.getOrNull()
 
     suspend fun check(currentVersion: String = BuildConfig.VERSION_NAME): Release? = withContext(Dispatchers.IO) {
+        // Release assets served by this endpoint replace the upstream package only.
+        if (BuildConfig.APPLICATION_ID != "app.wowforever") return@withContext null
         runCatching {
             val request = Request.Builder()
                 .url(RELEASES_URL)

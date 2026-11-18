@@ -1,4 +1,4 @@
-# WoW Forever for Android
+# WoW Forever Mobile
 
 Play **World of Warcraft: Forever** on Snapdragon Android handhelds as a normal Android app. You tap the icon, press Play, and the game runs.
 
@@ -34,9 +34,9 @@ Requirements:
 
 ### 1. Install the app
 
-Download `WoW-Forever.apk` from the [latest release](https://github.com/jaredgei/wow-forever-android/releases/latest) and install it on your device. The app's package name is `app.wowforever`, so it can sit alongside GameNative or Winlator.
+Download the signed WoW Forever Mobile APK from this repository's [Releases](../../releases) and install it on your device. The package name is `app.wowforever.mobile.touchhud`. An APK with the same signing certificate can update an existing installation.
 
-Releases from v2.4.5 on have a build provenance attestation: a signed record that this repository's release workflow built that exact file, and from which commit. To check a download, run `gh attestation verify WoW-Forever.apk --repo jaredgei/wow-forever-android` with the [GitHub CLI](https://cli.github.com).
+Choose **English** or **Deutsch** the first time you open the app. You can change the launcher and mobile HUD language later under **Language / Sprache**.
 
 ### 2. Install the game
 
@@ -81,7 +81,7 @@ Your existing `Data/` folder is reused. The `_classic_beta_/` folder can be dele
 
 ### 3. Play
 
-Once your game files and Battle.net credentials are configured, the app automatically launches straight into the game. If credentials are not yet configured, the launcher stops at the setup screen so you can enter them before playing. The first launch downloads the ARM64 game client and installs the Windows environment, which takes a few minutes and needs an internet connection.
+Tap **Play World of Warcraft** after the launcher recognizes your game files. The first launch downloads the ARM64 client and installs the Windows runtime. A full-release installation starts with Battle.net browser sign-in by default.
 
 - **Setup screen:** to access folder settings, forget credentials, check environment status, or view updates, hold **Start + Select + L2 + R2** (or tap the back button) during the loading splash to cancel boot and return to the setup screen.
 - The app creates a basic `WTF/Config.wtf` on first run and always sets `gxApi "D3D11"`, the renderer that works with DXVK.
@@ -94,9 +94,9 @@ Once your game files and Battle.net credentials are configured, the app automati
 - **Controller:** built-in handheld controllers work in-game. WoW's own gamepad mode handles the mapping.
 - **In-game menu:** press Back (the button or the back swipe gesture) to open the sidebar. It has **Keyboard**, on-screen controls, performance overlay and **Exit**.
 - **Keyboard:** the sidebar's **Keyboard** opens the Android keyboard. On dual-screen devices like the Thor it appears on the bottom screen. Symbols like `@` work, and so does pasting.
-- **Battle.net Auto-Login:** configure credentials directly on the launcher setup screen (**Password login**). Credentials are saved encrypted on-device via Android Keystore. On boot, the launcher generates `_forever_/login.txt`, which the WoW client automatically reads on startup to sign in natively without macro simulation or synthetic clicks. Use **Forget Login** on the launcher setup screen to clear credentials and remove the login file.
-- **Experimental browser login:** for accounts that keep getting BLZ51914400 with the saved login. Turn **Browser login** on in the launcher and press **Play**: Battle.net's own sign-in page opens, where you can confirm the device, and the game then starts with a one-time session from Battle.net instead of your password, the way the Battle.net app starts it. Turn it off to go back to the saved login. Details and the device-test checklist are in [tools/wow-session-bridge](tools/wow-session-bridge/ANDROID_TESTING.md).
-  - Authenticator codes still have to be entered by hand. The game keeps running when you switch apps, so you can grab a code from an authenticator app on the same device.
+- **Browser sign-in** opens Battle.net's page in the launcher and hands the game session to WoW via the ARM64 helper. The **Authenticator** button opens the Battle.net app if it is installed.
+- **Direct sign-in** opens the login in WoW. **Saved sign-in** lets you keep credentials encrypted on the device for this route. **Forget sign-in** clears them.
+- **Touch layout** uses left-hand movement, right-hand camera and jump, and two editable arcs for spells and items. The add-on stores its mobile layout per character.
   - Each install shows Battle.net its own Windows PC identity (machine ID and a `DESKTOP-XXXXXXX` computer name), generated once and kept across updates. Reinstalling the app creates a new one, so Battle.net may treat it as a new device.
 
 ---
@@ -140,7 +140,7 @@ tools/fetch_components.sh           # Wine/Proton, DXVK and Turnip archives (~13
 
 Release builds are signed with `app/keystores/keystore.properties` when it exists (`storeFile`, `storePassword`, `keyAlias`, `keyPassword`). Otherwise they fall back to the debug key. Builds signed with different keys can't update each other, so switching between them means uninstalling first.
 
-`fetch_components.sh` downloads the three runtime archives from this repo's `components-v1` release and checks them against `tools/components.sha256`. If you already have them, pass a folder instead: `tools/fetch_components.sh /path/to/components`.
+`fetch_components.sh` downloads the pinned runtime archives referenced by the script and checks them against `tools/components.sha256`. Pass a local components directory if you already have the archives.
 
 ---
 
@@ -148,6 +148,7 @@ Release builds are signed with `app/keystores/keystore.properties` when it exist
 
 This project packages other people's work into a single-purpose app. None of it would exist without:
 
+- **WoW Forever for Android** by jaredgei and contributors provides the base launcher and runtime integration. [Upstream project](https://github.com/jaredgei/wow-forever-android)
 - **[GameNative](https://github.com/utkarshdalal/GameNative)** by Utkarsh Dalal and contributors (GPL-3.0). The Android app, the Wine container management and the X server are all GameNative, based on v1.2.1. GameNative in turn builds on **[Pluvia](https://github.com/oxters168/Pluvia)**, **[Winlator](https://github.com/brunodev85/winlator)**, **[Winlator Cmod](https://github.com/coffincolors/winlator)** and the **[Bionic Vulkan wrapper](https://github.com/leegao/bionic-vulkan-wrapper)**.
 - **The WoW Forever RP6 community bundle**, which first got the beta running on a Retroid Pocket 6 in GameNative and supplied the three custom runtime components:
   - **Proton 11 ARM64EC** built from [The412Banner/proton-wine](https://github.com/The412Banner/proton-wine/tree/e5fa703ed7f7329e20d7ede481ab185cf8b1a8b2) with an ARM64 copied-syscall fix and an NLS fallback allocation patch.

@@ -10,6 +10,10 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import app.gamenative.utils.LocaleHelper
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import timber.log.Timber
 
 /**
@@ -22,6 +26,12 @@ import timber.log.Timber
 class GameSessionService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
+    override fun onDestroy() {
+        serviceRequested = false
+        foreground.value = false
+        super.onDestroy()
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val notification = buildNotification()
         try {
@@ -30,19 +40,21 @@ class GameSessionService : Service() {
             } else {
                 startForeground(NOTIFICATION_ID, notification)
             }
+            foreground.value = true
         } catch (e: Exception) {
             Timber.w(e, "Couldn't keep the game session in the foreground")
-            running = false
+            serviceRequested = false
+            foreground.value = false
             stopSelf()
         }
         return START_NOT_STICKY
     }
 
     private fun buildNotification(): Notification {
+        val localized = LocaleHelper.applyLanguage(this, PrefManager.appLanguage)
         val manager = getSystemService(NotificationManager::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(CHANNEL_ID, "Game running", NotificationManager.IMPORTANCE_LOW).apply {
-                description = "Shown while World of Warcraft is running, so it keeps running when you switch apps."
+            val channel = NotificationChannel(CHANNEL_ID, localized.getString(R.string.mobile_game_running), NotificationManager.IMPORTANCE_LOW).apply {
                 setShowBadge(false)
             }
             manager.createNotificationChannel(channel)
@@ -50,14 +62,15 @@ class GameSessionService : Service() {
         val openApp = PendingIntent.getActivity(
             this,
             0,
-            Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            Intent(this, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val builder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) Notification.Builder(this, CHANNEL_ID) else @Suppress("DEPRECATION") Notification.Builder(this)
         return builder
             .setSmallIcon(R.drawable.ic_notification)
-            .setContentTitle("World of Warcraft is running")
-            .setContentText("Tap to return to the game")
+            .setContentTitle(localized.getString(R.string.mobile_game_running))
+            .setContentText(localized.getString(R.string.mobile_return_to_game))
             .setContentIntent(openApp)
             .setOngoing(true)
             .setShowWhen(false)
@@ -69,24 +82,34 @@ class GameSessionService : Service() {
         private const val NOTIFICATION_ID = 1001
 
         @Volatile
-        private var running = false
+        private var serviceRequested = false
+        private val foreground = MutableStateFlow(false)
+        val isForeground: Boolean get() = foreground.value
 
         /** Starts the service if it isn't running. Only works while the app is in the foreground; retried on resume. */
         fun ensureStarted(context: Context) {
-            if (running) return
+            if (serviceRequested) return
+            serviceRequested = true
             try {
                 val intent = Intent(context, GameSessionService::class.java)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent) else context.startService(intent)
-                running = true
             } catch (e: Exception) {
+                serviceRequested = false
                 // Android 12+ refuses to start a foreground service from the background; MainActivity.onResume retries.
                 Timber.w(e, "Couldn't start the game session service")
             }
         }
 
+        /** Give Android time to promote the service before the authenticator takes focus. */
+        internal suspend fun prepareForAppSwitch(context: Context) {
+            ensureStarted(context.applicationContext)
+            withTimeoutOrNull(1_500L) { foreground.first { it } }
+        }
+
         fun stop(context: Context) {
-            if (!running) return
-            running = false
+            if (!serviceRequested) return
+            serviceRequested = false
+            foreground.value = false
             context.stopService(Intent(context, GameSessionService::class.java))
         }
     }

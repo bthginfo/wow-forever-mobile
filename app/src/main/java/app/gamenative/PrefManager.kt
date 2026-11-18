@@ -764,7 +764,10 @@ object PrefManager {
 
 
     private val APP_LANGUAGE = stringPreferencesKey("app_language")
-    var appLanguage: String
+    val appLanguage: String
         get() = getPref(APP_LANGUAGE, "")
-        set(value) = setPref(APP_LANGUAGE, value)
+
+    suspend fun saveAppLanguage(tag: String) {
+        dataStore.edit { it[APP_LANGUAGE] = tag }
+    }
 }

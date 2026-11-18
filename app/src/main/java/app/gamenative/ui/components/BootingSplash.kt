@@ -174,7 +174,7 @@ fun BootingSplash(
                 Spacer(modifier = Modifier.height(14.dp))
 
                 Text(
-                    text = "Press Start + Select + L2 + R2 to return to setup screen",
+                    text = stringResource(R.string.mobile_launcher_boot_shortcut),
                     style = MaterialTheme.typography.bodySmall.copy(
                         fontSize = 11.sp,
                         letterSpacing = 1.sp,
