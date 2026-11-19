@@ -57,8 +57,8 @@ android {
         buildConfigField("boolean", "XR_BUILD", "false")
         buildConfigField("boolean", "PIXEL_VULKAN_TEST", pixelVulkanTestBuild.toString())
 
-        versionCode = if (pixelVulkanTestBuild) 265 else 261
-        versionName = if (pixelVulkanTestBuild) "2.4.4-mobile.16-pixel.5" else "2.4.4-mobile.16"
+        versionCode = if (pixelVulkanTestBuild) 266 else 262
+        versionName = if (pixelVulkanTestBuild) "2.4.4-mobile.17-pixel.1" else "2.4.4-mobile.17"
 
         buildConfigField("boolean", "GOLD", "false")
         val iconValue = "@mipmap/ic_launcher"

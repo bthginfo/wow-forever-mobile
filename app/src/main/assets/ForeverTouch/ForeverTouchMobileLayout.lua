@@ -28,19 +28,60 @@ local activeEditBox
 
 local groups = {}
 for _, side in ipairs(SIDES) do
-    local panel = CreateFrame("Frame", side == "left" and "ForeverTouchLeft" or "ForeverTouchRight", UIParent)
-    panel:SetClampedToScreen(true)
-    panel:Hide()
     local editor = CreateFrame("Frame", nil, editShield)
     editor:SetMovable(true)
     editor:SetClampedToScreen(true)
-    groups[side] = { side = side, panel = panel, editor = editor, buttons = {}, previews = {} }
+    groups[side] = { side = side, editor = editor, previews = {} }
 end
 
-local live, defaults, desktopRecords, preferences
+local livePages, defaults, desktopRecords, preferences
+local actionPages = {}
 local draft, selected, dragFrom, moving
-local refreshSlots, updateEditor
+local refreshSlots, refreshLiveButtons, updateEditor
 local pendingRefresh, refreshQueued = false, false
+
+local switcher = CreateFrame("Button", "ForeverTouchCycleSet", UIParent, "UIPanelButtonTemplate,SecureHandlerClickTemplate")
+switcher:SetFrameStrata("HIGH")
+switcher:SetPoint("BOTTOM", UIParent, "BOTTOM", 0, 20)
+switcher:SetSize(132, 41)
+switcher:RegisterForClicks("LeftButtonUp")
+switcher:Hide()
+-- Each set has its own pre-bound buttons. The secure click only changes visibility.
+switcher:SetAttribute("_onclick", [[
+    if down or button ~= "LeftButton" then return end
+    local count = self:GetAttribute("pageCount")
+    if not count or count < 2 then return end
+    local current = self:GetAttribute("page")
+    local nextPage = current % count + 1
+    self:GetFrameRef("page" .. current):Hide()
+    self:GetFrameRef("page" .. nextPage):Show()
+    self:SetAttribute("page", nextPage)
+]])
+
+local function setLabel(index, count)
+    return string.format("Set %d / %d", index, count)
+end
+
+local function pageIndex(value, count)
+    if type(value) ~= "number" or value % 1 ~= 0 then return 1 end
+    return math.max(1, math.min(value, count))
+end
+
+local function createActionPage(index)
+    local frame = CreateFrame("Frame", nil, UIParent)
+    frame:Hide()
+    local page = { frame = frame, groups = {} }
+    for _, side in ipairs(SIDES) do
+        local prefix = side == "left" and "ForeverTouchLeft" or "ForeverTouchRight"
+        if index > 1 then prefix = prefix .. "Set" .. index end
+        local panel = CreateFrame("Frame", prefix, frame)
+        panel:SetClampedToScreen(true)
+        page.groups[side] = { panel = panel, prefix = prefix, buttons = {} }
+    end
+    actionPages[index] = page
+    switcher:SetFrameRef("page" .. index, frame)
+    return page
+end
 
 local function preferenceRevision(profile)
     if type(profile) ~= "table" or not next(profile) then return -1 end
@@ -77,7 +118,7 @@ local function makeSkillArt(button)
 end
 
 local function actionButton(group, index)
-    local name = (group.side == "left" and "ForeverTouchLeftAction" or "ForeverTouchRightAction") .. index
+    local name = group.prefix .. "Action" .. index
     local button = CreateFrame("Button", name, group.panel, "SecureActionButtonTemplate")
     button:SetAttribute("useOnKeyDown", false)
     button:RegisterForClicks("LeftButtonUp")
@@ -158,41 +199,45 @@ local function placeArc(frame, side, scale, width, height, viewport, position)
     frame:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", x, y)
 end
 
-local function layoutActions()
-    if not live or moving then return end
-    local width, height = UIParent:GetSize()
-    if width <= 0 or height <= 0 then return end
-    local scale = height / DESIGN_HEIGHT
-    local viewport = width / scale
-    local profile = draft and draft.slots or live
-    local positions = draft and draft.positions or preferences.mobileArcPositions
+local function layoutPage(page, pageGroups, editing, scale, viewport)
     for _, side in ipairs(SIDES) do
-        local group = groups[side]
-        local arcWidth, arcHeight, points = arcGeometry(#profile[side], viewport, side == "right")
-        local parent, buttons = nil, nil
-        if draft then
-            parent, buttons = group.editor, group.previews
-        elseif not InCombatLockdown() then
-            parent, buttons = group.panel, group.buttons
-        end
-        if parent then
-            local position = type(positions) == "table" and positions[side]
-            placeArc(parent, side, scale, arcWidth, arcHeight, viewport, position)
-            for index, point in ipairs(points) do
-                local button = buttons[index]
-                button:SetSize(point.size, point.size)
-                button:ClearAllPoints()
-                button:SetPoint("CENTER", parent, "BOTTOMLEFT", point.x, point.y)
-            end
+        local group = pageGroups[side]
+        local arcWidth, arcHeight, points = arcGeometry(#page.slots[side], viewport, side == "right")
+        local parent, buttons = group.panel, group.buttons
+        if editing then parent, buttons = group.editor, group.previews end
+        local position = type(page.positions) == "table" and page.positions[side]
+        placeArc(parent, side, scale, arcWidth, arcHeight, viewport, position)
+        for index, point in ipairs(points) do
+            local button = buttons[index]
+            button:SetSize(point.size, point.size)
+            button:ClearAllPoints()
+            button:SetPoint("CENTER", parent, "BOTTOMLEFT", point.x, point.y)
         end
     end
 end
 
+local function layoutActions()
+    if not livePages or moving then return end
+    local width, height = UIParent:GetSize()
+    if width <= 0 or height <= 0 then return end
+    local scale = height / DESIGN_HEIGHT
+    local viewport = width / scale
+    if draft then
+        layoutPage(draft.pages[draft.index], groups, true, scale, viewport)
+    elseif not InCombatLockdown() then
+        for index, page in ipairs(livePages) do
+            layoutPage(page, actionPages[index].groups, false, scale, viewport)
+        end
+        switcher:SetScale(scale)
+    end
+end
+
 local function swapSlots(first, second)
-    local from, to = draft.slots[first.mobileSide], draft.slots[second.mobileSide]
+    local page = draft.pages[draft.index]
+    local from, to = page.slots[first.mobileSide], page.slots[second.mobileSide]
     local a, b = first.mobileIndex, second.mobileIndex
     from[a], to[b] = to[b], from[a]
-    draft.changed = true
+    page.changed = true
 end
 
 local function previewButton(group, index)
@@ -219,8 +264,9 @@ local function previewButton(group, index)
     button:SetScript("OnDragStop", function()
         if not draft or dragFrom ~= button then return end
         local destination
+        local slots = draft.pages[draft.index].slots
         for _, side in ipairs(SIDES) do
-            for target = 1, #draft.slots[side] do
+            for target = 1, #slots[side] do
                 local other = groups[side].previews[target]
                 if other ~= button and other:IsMouseOver() then
                     destination = other
@@ -239,12 +285,13 @@ end
 
 local function chooseBinding(side, index)
     if not draft or picker:IsShown() then return end
-    local list = draft.slots[side]
+    local page = draft.pages[draft.index]
+    local list = page.slots[side]
     local old = list[index]
     picker:Open(function(binding)
-        if not draft then return end
+        if not draft or draft.pages[draft.index] ~= page then return end
         list[index] = binding
-        draft.changed = true
+        page.changed = true
         selected = nil
         updateEditor()
     end, old and (old.kind == "item" and "item" or "spell"))
@@ -252,14 +299,14 @@ end
 
 local tools = CreateFrame("Frame", nil, editShield)
 tools:SetPoint("TOP", UIParent, "TOP", 0, -93)
-tools:SetSize(280, 63)
+tools:SetSize(280, 146)
 local selection = tools:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
 selection:SetPoint("TOP", 0, 2)
 selection:SetWidth(280)
 
 local assign = CreateFrame("Button", nil, tools, "UIPanelButtonTemplate")
 assign:SetSize(129, 37)
-assign:SetPoint("BOTTOMLEFT", 4, 0)
+assign:SetPoint("TOPLEFT", 4, -25)
 assign:SetText(german and "Belegen" or "Assign")
 assign:SetScript("OnClick", function()
     if selected then chooseBinding(selected.mobileSide, selected.mobileIndex) end
@@ -267,12 +314,13 @@ end)
 
 local remove = CreateFrame("Button", nil, tools, "UIPanelButtonTemplate")
 remove:SetSize(129, 37)
-remove:SetPoint("BOTTOMRIGHT", -4, 0)
+remove:SetPoint("TOPRIGHT", -4, -25)
 remove:SetText(german and "Entfernen" or "Remove")
 remove:SetScript("OnClick", function()
     if not draft or not selected or picker:IsShown() then return end
-    table.remove(draft.slots[selected.mobileSide], selected.mobileIndex)
-    draft.changed = true
+    local page = draft.pages[draft.index]
+    table.remove(page.slots[selected.mobileSide], selected.mobileIndex)
+    page.changed = true
     selected = nil
     updateEditor()
 end)
@@ -305,11 +353,12 @@ for _, side in ipairs(SIDES) do
         local travelX, travelY = arcTravel(editor:GetWidth(), editor:GetHeight(), UIParent:GetWidth() / scale)
         local left, bottom = editor:GetLeft(), editor:GetBottom()
         if left and bottom then
-            draft.positions[group.side] = {
+            local page = draft.pages[draft.index]
+            page.positions[group.side] = {
                 x = normalizedCoordinate(left - (UIParent:GetLeft() or 0) / scale, travelX),
                 y = normalizedCoordinate(bottom - (UIParent:GetBottom() or 0) / scale, travelY),
             }
-            draft.moved = true
+            page.moved = true
         end
         layoutActions()
     end)
@@ -320,16 +369,19 @@ for _, side in ipairs(SIDES) do
     add:SetText("+")
     add:SetClampedToScreen(true)
     add:SetScript("OnClick", function()
-        if draft then chooseBinding(group.side, #draft.slots[group.side] + 1) end
+        if draft then chooseBinding(group.side, #draft.pages[draft.index].slots[group.side] + 1) end
     end)
     group.add = add
 end
 
+local previousSet, nextSet, addSet, removeSet, setCaption
+
 updateEditor = function()
     if not draft then return end
-    local mayAdd = #draft.slots.left + #draft.slots.right < Actions.limit
+    local profile = draft.pages[draft.index].slots
+    local mayAdd = #profile.left + #profile.right < Actions.limit
     for _, side in ipairs(SIDES) do
-        local group, slots = groups[side], draft.slots[side]
+        local group, slots = groups[side], profile[side]
         for index, binding in ipairs(slots) do
             local button = group.previews[index] or previewButton(group, index)
             button.icon:SetTexture(Actions.texture(binding, desktopRecords))
@@ -343,11 +395,15 @@ updateEditor = function()
         for index = #slots + 1, #group.previews do group.previews[index]:Hide() end
         group.add:SetEnabled(mayAdd)
     end
-    local binding = selected and draft.slots[selected.mobileSide][selected.mobileIndex]
+    local binding = selected and profile[selected.mobileSide][selected.mobileIndex]
     selection:SetText(binding and (Actions.name(binding, desktopRecords) or "Slot")
         or (german and "Wähle einen Slot oder tippe auf +" or "Select a slot or tap +"))
     assign:SetEnabled(binding ~= nil)
     remove:SetEnabled(binding ~= nil)
+    setCaption:SetText(setLabel(draft.index, #draft.pages))
+    previousSet:SetEnabled(draft.index > 1)
+    nextSet:SetEnabled(draft.index < #draft.pages)
+    removeSet:SetEnabled(draft.index > 1)
     tools:SetScale(UIParent:GetHeight() / DESIGN_HEIGHT)
     layoutActions()
 end
@@ -369,13 +425,53 @@ local function stopMoving()
     moving = nil
 end
 
+local function setControl(name, label, point, x, y, width, action)
+    local button = CreateFrame("Button", "ForeverTouch" .. name, tools, "UIPanelButtonTemplate")
+    button:SetSize(width, 35)
+    button:SetPoint(point, x, y)
+    button:SetText(label)
+    button:SetScript("OnClick", function()
+        if not draft or moving or dragFrom or picker:IsShown() then return end
+        action()
+        selected = nil
+        updateEditor()
+    end)
+    return button
+end
+
+setCaption = tools:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+setCaption:SetPoint("TOP", 0, -78)
+previousSet = setControl("PreviousSet", "‹", "TOPLEFT", 4, -68, 42, function()
+    draft.index = math.max(1, draft.index - 1)
+end)
+nextSet = setControl("NextSet", "›", "TOPRIGHT", -4, -68, 42, function()
+    draft.index = math.min(#draft.pages, draft.index + 1)
+end)
+addSet = setControl("AddSet", german and "Neues Set" or "Add set", "BOTTOMLEFT", 4, 0, 129, function()
+    local current = draft.pages[draft.index]
+    draft.pages[#draft.pages + 1] = { slots = Actions.copyProfile(), positions = copyPositions(current.positions) }
+    draft.index = #draft.pages
+    draft.structureChanged = true
+end)
+removeSet = setControl("RemoveSet", german and "Set löschen" or "Remove set", "BOTTOMRIGHT", -4, 0, 129, function()
+    if draft.index == 1 then return end
+    table.remove(draft.pages, draft.index)
+    draft.index = math.min(draft.index, #draft.pages)
+    draft.structureChanged = true
+end)
+
+local function setActionAlpha(alpha)
+    switcher:SetAlpha(alpha)
+    for _, page in ipairs(actionPages) do page.frame:SetAlpha(alpha) end
+end
+
 local function openEditor()
-    if draft or not live then return end
-    draft = {
-        slots = Actions.copyProfile(live),
-        positions = copyPositions(preferences.mobileArcPositions),
-    }
-    for _, side in ipairs(SIDES) do groups[side].panel:SetAlpha(0) end
+    if draft or not livePages then return end
+    draft = { pages = {}, index = switcher:GetAttribute("page") }
+    for index, page in ipairs(livePages) do
+        draft.pages[index] = { slots = Actions.copyProfile(page.slots), positions = copyPositions(page.positions) }
+    end
+    setActionAlpha(0)
     updateEditor()
     editShield:Show()
 end
@@ -384,9 +480,11 @@ local function resetEditor()
     if not draft then return end
     stopMoving()
     picker:Hide()
-    draft.slots = Actions.copyProfile(defaults)
-    draft.positions = {}
-    draft.changed, draft.reset = false, true
+    draft.pages[draft.index] = {
+        slots = Actions.copyProfile(draft.index == 1 and defaults or nil),
+        positions = {},
+        reset = true,
+    }
     selected, dragFrom = nil, nil
     updateEditor()
 end
@@ -394,21 +492,35 @@ end
 local function finishEditing(save)
     if not draft then return end
     stopMoving()
-    local changed = save and (draft.changed or draft.reset or draft.moved)
+    local changed = false
+    if save then
+        preferences.mobileArcPage = draft.index > 1 and draft.index or nil
+        changed = draft.structureChanged
+        for _, page in ipairs(draft.pages) do
+            changed = changed or page.changed or page.reset or page.moved
+        end
+    end
     if changed then
-        preferences.mobileArcPositions = draft.positions
-        if draft.reset then
+        local first = draft.pages[1]
+        preferences.mobileArcPositions = first.positions
+        if first.reset then
             preferences.mobileSlots, preferences.order, preferences.favorites = nil, nil, nil
         end
-        if draft.changed then
-            preferences.mobileSlots = Actions.independentProfile(draft.slots, desktopRecords)
+        if first.changed then
+            preferences.mobileSlots = Actions.independentProfile(first.slots, desktopRecords)
         end
+        local more = {}
+        for index = 2, #draft.pages do
+            local page = draft.pages[index]
+            more[#more + 1] = { slots = Actions.independentProfile(page.slots, desktopRecords), positions = page.positions }
+        end
+        preferences.mobileArcPages = #more > 0 and more or nil
         preferences.revision = preferenceRevision(preferences) + 1
     end
     picker:Hide()
     draft, selected, dragFrom = nil, nil, nil
     editShield:Hide()
-    for _, side in ipairs(SIDES) do groups[side].panel:SetAlpha(1) end
+    setActionAlpha(1)
     refreshSlots()
     if changed and not InCombatLockdown() then
         -- WoW writes SavedVariables on reload. Call from the Save click so the client can flush immediately.
@@ -624,37 +736,63 @@ refreshSlots = function()
     local keys
     keys, desktopRecords = Actions.desktop()
     defaults = Actions.splitDesktop(keys, desktopRecords)
+    local first = defaults
     if type(preferences.mobileSlots) == "table" then
-        live = Actions.copyProfile(preferences.mobileSlots)
+        first = Actions.copyProfile(preferences.mobileSlots)
     elseif preferences.order or preferences.favorites then
-        live = Actions.splitDesktop(keys, desktopRecords, preferences.order or preferences.favorites)
-    else
-        live = defaults
+        first = Actions.splitDesktop(keys, desktopRecords, preferences.order or preferences.favorites)
     end
+    livePages = { { slots = first, positions = preferences.mobileArcPositions } }
+    if type(preferences.mobileArcPages) == "table" then
+        for _, page in ipairs(preferences.mobileArcPages) do
+            if type(page) == "table" then
+                livePages[#livePages + 1] = { slots = Actions.copyProfile(page.slots), positions = page.positions }
+            end
+        end
+    end
+    local activeIndex = pageIndex(preferences.mobileArcPage, #livePages)
 
-    for _, side in ipairs(SIDES) do
-        local group, slots = groups[side], live[side]
-        for index, binding in ipairs(slots) do
-            local button = group.buttons[index] or actionButton(group, index)
-            Actions.bind(button, binding, desktopRecords)
-            Actions.refresh(button, desktopRecords, true)
-            button:Show()
+    for index, page in ipairs(livePages) do
+        local frame = actionPages[index] or createActionPage(index)
+        for _, side in ipairs(SIDES) do
+            local group, slots = frame.groups[side], page.slots[side]
+            for slot, binding in ipairs(slots) do
+                local button = group.buttons[slot] or actionButton(group, slot)
+                Actions.bind(button, binding, desktopRecords)
+                Actions.refresh(button, desktopRecords, true)
+                button:Show()
+            end
+            for slot = #slots + 1, #group.buttons do
+                Actions.bind(group.buttons[slot], nil, desktopRecords)
+                group.buttons[slot]:Hide()
+            end
+            group.panel:SetShown(#slots > 0)
         end
-        for index = #slots + 1, #group.buttons do
-            Actions.bind(group.buttons[index], nil, desktopRecords)
-            group.buttons[index]:Hide()
-        end
-        group.panel:SetShown(#slots > 0)
     end
+    for index, page in ipairs(actionPages) do page.frame:SetShown(index == activeIndex) end
+    switcher:SetAttribute("pageCount", #livePages)
+    switcher:SetAttribute("page", activeIndex)
+    switcher:SetText(setLabel(activeIndex, #livePages))
+    switcher:SetShown(#livePages > 1)
     layoutActions()
 end
 
-local function refreshLiveButtons(updateIcon)
-    if not live then return end
+refreshLiveButtons = function(updateIcon)
+    local index = switcher:GetAttribute("page")
+    local page = livePages and livePages[index]
+    if not page then return end
+    local liveGroups = actionPages[index].groups
     for _, side in ipairs(SIDES) do
-        for index = 1, #live[side] do Actions.refresh(groups[side].buttons[index], desktopRecords, updateIcon) end
+        for slot = 1, #page.slots[side] do Actions.refresh(liveGroups[side].buttons[slot], desktopRecords, updateIcon) end
     end
 end
+
+switcher:HookScript("OnAttributeChanged", function(_, name, index)
+    if name ~= "page" or not livePages then return end
+    preferences.mobileArcPage = index > 1 and index or nil
+    switcher:SetText(setLabel(index, #livePages))
+    refreshLiveButtons(true)
+end)
 
 local function installBindings()
     -- Temporary bindings for the Android toolbar. The player's own bindings stay in place.
