@@ -9,8 +9,10 @@ internal data class HardwareInput(val keyboard: Boolean, val mouse: Boolean) {
 
     companion object {
         fun connected(): HardwareInput {
-            val devices = InputDevice.getDeviceIds().mapNotNull(InputDevice::getDevice)
+            val devices = InputDevice.getDeviceIds().asSequence()
+                .mapNotNull { InputDevice.getDevice(it) }
                 .filter { !it.isVirtual && it.isEnabled && (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || it.isExternal) }
+                .toList()
             return HardwareInput(devices.any(Keyboard::isKeyboardDevice), devices.any(::isMouse))
         }
 
