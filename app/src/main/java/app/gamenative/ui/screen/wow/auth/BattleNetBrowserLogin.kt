@@ -12,6 +12,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.gamenative.BuildConfig
 import app.gamenative.PluviaApp
 import app.gamenative.R
 import app.gamenative.events.AndroidEvent
@@ -101,7 +102,7 @@ internal object BattleNetBrowserLogin {
             }
             val log = File(gameRoot, "${WowClientDownloader.FLAVOR_DIR}/Logs/BrowserLogin.log")
             val attempt = Attempt(bridge, request, "${region.name}.actual.battle.net", build, log, context.resources)
-            diag(attempt, "browser login started (app ${app.gamenative.BuildConfig.VERSION_NAME}, ${region.name}, build $build)")
+            diag(attempt, "browser login started (app ${BuildConfig.VERSION_NAME}, ${region.name}, build $build)")
             active = attempt
             val starting = R.string.mobile_browser_starting
             publish(attempt, Ui.Waiting(starting), starting)
@@ -114,8 +115,9 @@ internal object BattleNetBrowserLogin {
             // These arguments contain paths and public switches only. The token travels over the authenticated socket.
             // No quotes: ProcessHelper.splitCommand keeps quote characters, so Wine would get them as part of each
             // path and couldn't find the helper. None of these paths contain spaces.
+            val checkArgument = if (BuildConfig.PIXEL_VULKAN_TEST) " --check-d3d11" else ""
             return "C:\\wow-session\\$ASSET C:\\wow-session\\${request.name} " +
-                "$gamePath -launcherlogin -uid ${WowClientDownloader.TARGET_PRODUCT} -d3d11"
+                "$gamePath -launcherlogin -uid ${WowClientDownloader.TARGET_PRODUCT} -d3d11$checkArgument"
         } catch (error: Exception) {
             bridge.close()
             request.delete()
@@ -128,6 +130,11 @@ internal object BattleNetBrowserLogin {
             diag(attempt, "waiting for the helper to connect")
             attempt.bridge.accept().use { peer ->
                 diag(attempt, "helper connected")
+                if (BuildConfig.PIXEL_VULKAN_TEST) {
+                    val checking = R.string.mobile_graphics_check_starting
+                    publish(attempt, Ui.Waiting(checking), checking)
+                    if (!acceptGraphicsResult(attempt, peer.graphicsResult())) return
+                }
                 val device = peer.device().also { attempt.device.set(it) }
                 validateDevice(device)
                 val url = withClient(attempt) { client ->
@@ -178,6 +185,15 @@ internal object BattleNetBrowserLogin {
             attempt.close()
             synchronized(this) { if (active === attempt) active = null }
         }
+    }
+
+    @Synchronized
+    private fun acceptGraphicsResult(attempt: Attempt, code: String): Boolean {
+        if (active !== attempt || attempt.cancelled) return false
+        MobileLaunchDiagnostics.graphicsChecked(code)
+        if (code == "00000000") return true
+        fail(attempt, attempt.resources.getString(R.string.mobile_graphics_check_failed, code))
+        return false
     }
 
     private fun <T> withClient(attempt: Attempt, action: (BgsClient) -> T): T {

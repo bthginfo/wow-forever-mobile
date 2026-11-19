@@ -3,8 +3,10 @@
  * No credential is accepted in an argument, environment variable, or file. */
 #define WIN32_LEAN_AND_MEAN
 #define _WIN32_WINNT 0x0601
+#define COBJMACROS
 #include <winsock2.h>
 #include <windows.h>
+#include <d3d11.h>
 #include <wincrypt.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -152,6 +154,58 @@ static int no_login_file(const WCHAR *directory) {
     return GetLastError() == ERROR_FILE_NOT_FOUND;
 }
 
+static HRESULT graphics_windows_error(void) {
+    DWORD error = GetLastError();
+    return error == ERROR_SUCCESS ? E_FAIL : HRESULT_FROM_WIN32(error);
+}
+
+/* Executed in a separate process with the game's working directory and inherited Wine environment. */
+static HRESULT check_d3d11_device(void) {
+    SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
+    HMODULE d3d11 = LoadLibraryExW(L"d3d11.dll", NULL, LOAD_LIBRARY_SEARCH_SYSTEM32);
+    if (!d3d11) return graphics_windows_error();
+    PFN_D3D11_CREATE_DEVICE create_device = (PFN_D3D11_CREATE_DEVICE)GetProcAddress(d3d11, "D3D11CreateDevice");
+    HRESULT result = HRESULT_FROM_WIN32(ERROR_PROC_NOT_FOUND);
+    if (create_device) {
+        const D3D_FEATURE_LEVEL requested = D3D_FEATURE_LEVEL_11_0;
+        D3D_FEATURE_LEVEL selected = 0;
+        ID3D11Device *device = NULL;
+        result = create_device(NULL, D3D_DRIVER_TYPE_HARDWARE, NULL, 0, &requested, 1,
+                               D3D11_SDK_VERSION, &device, &selected, NULL);
+        if (SUCCEEDED(result)) result = device && selected == requested ? S_OK : E_FAIL;
+        if (device) ID3D11Device_Release(device);
+    }
+    FreeLibrary(d3d11);
+    return result;
+}
+
+static DWORD run_d3d11_probe(const WCHAR *directory) {
+    WCHAR path[MAX_PATH * 4], command[MAX_PATH * 4 + 32] = {0};
+    DWORD length = GetModuleFileNameW(NULL, path, sizeof(path) / sizeof(path[0]));
+    if (!length || length >= sizeof(path) / sizeof(path[0])) return (DWORD)graphics_windows_error();
+    const size_t command_limit = sizeof(command) / sizeof(command[0]);
+    if (!bridge_append_argument(command, command_limit, path) ||
+        !bridge_append_argument(command, command_limit, L"--probe-d3d11")) return (DWORD)E_FAIL;
+
+    STARTUPINFOW startup = {.cb = sizeof(startup)};
+    PROCESS_INFORMATION process = {0};
+    if (!CreateProcessW(path, command, NULL, NULL, FALSE, DETACHED_PROCESS,
+                        NULL, directory, &startup, &process)) return (DWORD)graphics_windows_error();
+
+    DWORD status = (DWORD)E_FAIL;
+    DWORD wait = WaitForSingleObject(process.hProcess, 20000);
+    if (wait == WAIT_OBJECT_0) {
+        if (!GetExitCodeProcess(process.hProcess, &status)) status = (DWORD)graphics_windows_error();
+    } else {
+        status = wait == WAIT_TIMEOUT ? (DWORD)HRESULT_FROM_WIN32(ERROR_TIMEOUT) : (DWORD)graphics_windows_error();
+        TerminateProcess(process.hProcess, status);
+        WaitForSingleObject(process.hProcess, 1000);
+    }
+    CloseHandle(process.hThread);
+    CloseHandle(process.hProcess);
+    return status;
+}
+
 struct game_window {
     DWORD process;
     HWND window;
@@ -193,6 +247,9 @@ static void focus_game(HANDLE process, DWORD process_id) {
 }
 
 int wmain(int argc, WCHAR **argv) {
+    if (argc == 2 && wcscmp(argv[1], L"--probe-d3d11") == 0) return (int)check_d3d11_device();
+    int graphics_check = argc > 3 && wcscmp(argv[argc - 1], L"--check-d3d11") == 0;
+    if (graphics_check) argc--;
     unsigned short port = 0;
     BYTE nonce[BRIDGE_NONCE_SIZE] = {0}, client_proof[32] = {0};
     BYTE server_proof[32] = {0}, received_proof[32] = {0};
@@ -248,6 +305,32 @@ int wmain(int argc, WCHAR **argv) {
     SecureZeroMemory(server_proof, sizeof(server_proof));
     SecureZeroMemory(received_proof, sizeof(received_proof));
 
+    result = 9;
+    if (wcslen(argv[2]) >= sizeof(directory) / sizeof(directory[0])) goto done;
+    wcscpy(directory, argv[2]);
+    WCHAR *separator = wcsrchr(directory, L'\\');
+    if (!separator || separator == directory) goto done;
+    *separator = 0;
+
+    if (graphics_check) {
+        result = 13;
+        DWORD status = run_d3d11_probe(directory);
+        char report[20];
+        int length = snprintf(report, sizeof(report), "GRAPHICS %08lX", (unsigned long)status);
+        diag("Direct3D 11 probe result 0x%08lX", (unsigned long)status);
+        if (length != 17 || !send_frame(peer, report, (uint32_t)length)) goto done;
+        if (status) {
+            /* Let Android record the failure before Wine reports the helper's exit. */
+            DWORD close_timeout = 5000;
+            char unused;
+            if (!setsockopt(peer, SOL_SOCKET, SO_RCVTIMEO, (char *)&close_timeout, sizeof(close_timeout)))
+                (void)recv(peer, &unused, 1, 0);
+            closesocket(peer);
+            peer = INVALID_SOCKET;
+            goto done;
+        }
+    }
+
     result = 7;
     if (pipe_device() || device_overflow || !device_used ||
         !send_frame(peer, device_json, (uint32_t)device_used)) goto done;
@@ -257,11 +340,6 @@ int wmain(int argc, WCHAR **argv) {
     diag("received the game session");
 
     result = 9;
-    if (wcslen(argv[2]) >= sizeof(directory) / sizeof(directory[0])) goto done;
-    wcscpy(directory, argv[2]);
-    WCHAR *separator = wcsrchr(directory, L'\\');
-    if (!separator || separator == directory) goto done;
-    *separator = 0;
     /* This client gives login.txt precedence over the launcher token path. */
     if (!no_login_file(directory)) goto done;
     for (int i = 2; i < argc; i++)

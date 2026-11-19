@@ -11,6 +11,8 @@ internal enum class GpuProfile(
     val tuDebug: String?,
     val screenSize: String,
     val edition: String,
+    val graphicsWrapper: String = "Wrapper",
+    val dxvkVersion: String = "2.4.1-wow-aarch64-test",
 ) {
     ADRENO_7XX(
         "Turnip-WoW-scheduler-test",
@@ -26,23 +28,35 @@ internal enum class GpuProfile(
         "1280x720",
         "Snapdragon 8 Elite / Adreno 8xx",
     ),
+    PIXEL_9(
+        "System",
+        null,
+        null,
+        "1280x720",
+        "Pixel 9 / Mali Vulkan",
+        graphicsWrapper = "Wrapper-GameNative",
+        dxvkVersion = "2.4.1-wow-powervr",
+    ),
     PIXEL_10(
         "System",
         null,
         null,
         "1280x720",
         "Pixel 10 / PowerVR Vulkan",
+        graphicsWrapper = "Wrapper-GameNative",
+        dxvkVersion = "2.4.1-wow-powervr",
     );
 
     val graphicsDriverConfig: String
-        get() = if (this == PIXEL_10) {
+        get() = if (driver == "System") {
             "version=$driver,adrenotoolsTurnip=0,vulkanVersion=1.3,gpuName=Device,presentMode=fifo," +
-                "resourceType=buffer,bcnEmulation=auto,bcnEmulationType=compute,quality=high"
+                "resourceType=auto,bcnEmulation=auto,bcnEmulationCache=1,quality=high"
         } else {
             "version=$driver,adrenotoolsTurnip=1,resourceType=buffer,bcnEmulation=auto,quality=high"
         }
 
     companion object {
+        private val pixel9Models = setOf("Pixel 9", "Pixel 9 Pro", "Pixel 9 Pro XL", "Pixel 9 Pro Fold")
         private val pixel10Models = setOf("Pixel 10", "Pixel 10 Pro", "Pixel 10 Pro XL", "Pixel 10 Pro Fold")
 
         fun detect(context: Context): GpuProfile =
@@ -54,8 +68,9 @@ internal enum class GpuProfile(
             model: String,
             isAdreno8xx: () -> Boolean,
         ): GpuProfile {
-            if (pixelVulkanTestEnabled && manufacturer.equals("Google", ignoreCase = true) && model in pixel10Models) {
-                return PIXEL_10
+            if (pixelVulkanTestEnabled && manufacturer.equals("Google", ignoreCase = true)) {
+                if (model in pixel9Models) return PIXEL_9
+                if (model in pixel10Models) return PIXEL_10
             }
             return if (isAdreno8xx()) ADRENO_8XX else ADRENO_7XX
         }

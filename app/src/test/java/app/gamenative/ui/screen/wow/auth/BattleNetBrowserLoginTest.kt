@@ -1,14 +1,17 @@
 package app.gamenative.ui.screen.wow.auth
 
 import android.app.Application
+import app.gamenative.BuildConfig
 import app.gamenative.PluviaApp
 import app.gamenative.events.AndroidEvent
 import com.winlator.container.Container
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
+import org.junit.Assume.assumeTrue
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -17,10 +20,13 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import java.io.DataInputStream
+import java.io.DataOutputStream
 import java.io.File
 import java.io.IOException
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.security.MessageDigest
 
 /** Starts the real coordinator and its loopback listener, but never a Wine helper or BGS connection. */
 @RunWith(RobolectricTestRunner::class)
@@ -111,19 +117,43 @@ class BattleNetBrowserLoginTest {
         // The launcher splits the command with ProcessHelper.splitCommand, which keeps quote characters.
         val arguments = com.winlator.core.ProcessHelper.splitCommand(command).toList()
 
-        org.junit.Assert.assertEquals(
-            listOf(
-                "C:\\wow-session\\wow-session-bridge.exe",
-                "C:\\wow-session\\${request.name}",
-                "G:\\_forever_\\Wow-ARM64.exe",
-                "-launcherlogin",
-                "-uid",
-                "wowf",
-                "-d3d11",
-            ),
-            arguments,
-        )
+        val expected = listOf(
+            "C:\\wow-session\\wow-session-bridge.exe",
+            "C:\\wow-session\\${request.name}",
+            "G:\\_forever_\\Wow-ARM64.exe",
+            "-launcherlogin",
+            "-uid",
+            "wowf",
+            "-d3d11",
+        ) + if (BuildConfig.PIXEL_VULKAN_TEST) listOf("--check-d3d11") else emptyList()
+        assertEquals(expected, arguments)
         BattleNetBrowserLogin.cancel()
+    }
+
+    @Test
+    fun graphicsFailureClosesTheBridgeBeforeBrowserSignIn() {
+        assumeTrue(BuildConfig.PIXEL_VULKAN_TEST)
+        val container = container("graphics-failure")
+        BattleNetBrowserLogin.start(RuntimeEnvironment.getApplication(), container)
+        val config = request(container).readLines()
+        val nonce = config[1].chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+        val digest = MessageDigest.getInstance("SHA-256")
+
+        Socket("127.0.0.1", config[0].toInt()).use { child ->
+            child.soTimeout = 5000
+            child.getOutputStream().write(digest.digest("WOW-SESSION-CLIENT-1".toByteArray() + nonce))
+            val input = DataInputStream(child.getInputStream())
+            val serverProof = ByteArray(32).also(input::readFully)
+            assertArrayEquals(digest.digest("WOW-SESSION-SERVER-1".toByteArray() + nonce), serverProof)
+            DataOutputStream(child.getOutputStream()).apply {
+                writeInt(17)
+                writeBytes("GRAPHICS 887A0004")
+                flush()
+            }
+            assertEquals(-1, input.read())
+            val failure = BattleNetBrowserLogin.ui.value as BattleNetBrowserLogin.Ui.Failed
+            assertTrue(failure.text.contains("0x887A0004"))
+        }
     }
 
     @Test

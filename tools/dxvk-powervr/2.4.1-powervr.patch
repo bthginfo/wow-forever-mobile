@@ -1,0 +1,62 @@
+diff --git a/src/d3d11/d3d11_texture.cpp b/src/d3d11/d3d11_texture.cpp
+index 13e2c00..88ff937 100644
+--- a/src/d3d11/d3d11_texture.cpp
++++ b/src/d3d11/d3d11_texture.cpp
+@@ -78,0 +79,12 @@ namespace dxvk {
++    // Use RGBA8 storage views when a mobile driver cannot bind BGRA8 as storage.
++    // Keep BGRA8 sampled and render target views on the same image.
++    if ((m_desc.BindFlags & D3D11_BIND_UNORDERED_ACCESS)
++     && (formatInfo.Format == VK_FORMAT_B8G8R8A8_UNORM || formatInfo.Format == VK_FORMAT_B8G8R8A8_SRGB)
++     && !CheckFormatFeatureSupport(VK_FORMAT_B8G8R8A8_UNORM, VK_FORMAT_FEATURE_2_STORAGE_IMAGE_BIT)
++     && CheckFormatFeatureSupport(VK_FORMAT_R8G8B8A8_UNORM, VK_FORMAT_FEATURE_2_STORAGE_IMAGE_BIT)) {
++      formatFamily.Add(formatInfo.Format);
++      formatFamily.Add(VK_FORMAT_R8G8B8A8_UNORM);
++      m_bgraUavFallback = true;
++      Logger::info("D3D11: Using RGBA8 storage views for a BGRA8 texture");
++    }
++
+@@ -124 +136 @@ namespace dxvk {
+-      if (formatProperties->flags.test(DxvkFormatFlag::ColorSpaceSrgb))
++      if (formatProperties->flags.test(DxvkFormatFlag::ColorSpaceSrgb) || m_bgraUavFallback)
+@@ -369,0 +382,8 @@ namespace dxvk {
++  VkFormat D3D11CommonTexture::GetUavViewFormat(VkFormat Format) const {
++    if (m_bgraUavFallback && (Format == VK_FORMAT_B8G8R8A8_UNORM || Format == VK_FORMAT_B8G8R8A8_SRGB))
++      return VK_FORMAT_R8G8B8A8_UNORM;
++
++    return Format;
++  }
++
++
+@@ -380,0 +401,3 @@ namespace dxvk {
++
++    if (BindFlags & D3D11_BIND_UNORDERED_ACCESS)
++      viewFormat.Format = GetUavViewFormat(viewFormat.Format);
+diff --git a/src/d3d11/d3d11_texture.h b/src/d3d11/d3d11_texture.h
+index 3708d14..357fe03 100644
+--- a/src/d3d11/d3d11_texture.h
++++ b/src/d3d11/d3d11_texture.h
+@@ -254,0 +255,2 @@ namespace dxvk {
++
++    VkFormat GetUavViewFormat(VkFormat Format) const;
+@@ -494,0 +497 @@ namespace dxvk {
++    bool                          m_bgraUavFallback = false;
+diff --git a/src/d3d11/d3d11_view_uav.cpp b/src/d3d11/d3d11_view_uav.cpp
+index 164a04c..f051ff1 100644
+--- a/src/d3d11/d3d11_view_uav.cpp
++++ b/src/d3d11/d3d11_view_uav.cpp
+@@ -61 +61 @@ namespace dxvk {
+-      viewInfo.format  = formatInfo.Format;
++      viewInfo.format  = texture->GetUavViewFormat(formatInfo.Format);
+diff --git a/src/dxvk/dxvk_pipemanager.cpp b/src/dxvk/dxvk_pipemanager.cpp
+index 84a07c1..47df13b 100644
+--- a/src/dxvk/dxvk_pipemanager.cpp
++++ b/src/dxvk/dxvk_pipemanager.cpp
+@@ -446 +446 @@ namespace dxvk {
+-      std::tuple(),
++      std::tuple(key),
+diff --git a/src/util/config/config.cpp b/src/util/config/config.cpp
+index dc8ba60..d2de356 100644
+--- a/src/util/config/config.cpp
++++ b/src/util/config/config.cpp
+@@ -0,0 +1 @@
++#include <algorithm>

@@ -63,6 +63,49 @@ class SessionBridgeTest {
         } finally { executor.shutdownNow() }
     }
 
+    @Test fun readsTheGraphicsResultBeforeTheDeviceFrame() {
+        val executor = Executors.newSingleThreadExecutor()
+        try {
+            SessionBridge().use { bridge ->
+                val peer = executor.submit<SessionBridge.Peer> { bridge.accept() }
+                connect(bridge).use { child ->
+                    val device = "{\"RGKY\":123}".toByteArray()
+                    DataOutputStream(child.getOutputStream()).apply {
+                        writeInt(17)
+                        writeBytes("GRAPHICS 00000000")
+                        writeInt(device.size)
+                        write(device)
+                    }
+                    peer.get(2, TimeUnit.SECONDS).use { accepted ->
+                        assertEquals("00000000", accepted.graphicsResult())
+                        assertArrayEquals(device, accepted.device())
+                    }
+                }
+            }
+        } finally { executor.shutdownNow() }
+    }
+
+    @Test fun acceptsAnEightDigitGraphicsFailureAndRejectsInvalidPayloads() {
+        val executor = Executors.newSingleThreadExecutor()
+        try {
+            SessionBridge().use { bridge ->
+                val peer = executor.submit<SessionBridge.Peer> { bridge.accept() }
+                connect(bridge).use { child ->
+                    DataOutputStream(child.getOutputStream()).apply {
+                        writeInt(17)
+                        writeBytes("GRAPHICS 887A0004")
+                        writeInt(17)
+                        writeBytes("GRAPHICS XXXXXXXX")
+                    }
+                    peer.get(2, TimeUnit.SECONDS).use { accepted ->
+                        assertEquals("887A0004", accepted.graphicsResult())
+                        assertThrows(IOException::class.java) { accepted.graphicsResult() }
+                    }
+                }
+            }
+        } finally { executor.shutdownNow() }
+    }
+
     @Test fun rejectsNegativeEmptyAndOversizedFramesBeforeAllocation() {
         for (size in listOf(-1, 0, 4097, Int.MAX_VALUE)) {
             val executor = Executors.newSingleThreadExecutor()

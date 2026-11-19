@@ -6,6 +6,7 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
+import android.os.Build
 import android.os.SystemClock
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Column
@@ -35,6 +36,7 @@ internal object MobileLaunchDiagnostics {
         val startTime: Long,
         val startElapsed: Long,
         val region: GameRegion,
+        val gpu: GpuProfile,
         val network: ConnectionSnapshot,
         val runtime: Long? = null,
         val container: Long? = null,
@@ -42,6 +44,7 @@ internal object MobileLaunchDiagnostics {
         val browserStep: BrowserStep? = null,
         val battleNetAppOpened: Boolean = false,
         val guestExit: GuestExit? = null,
+        val graphicsCode: String? = null,
     )
 
     private data class CachedLogin(val launchTime: Long, val length: Long, val modified: Long, val state: LoginState)
@@ -52,9 +55,9 @@ internal object MobileLaunchDiagnostics {
     private var cachedLogin: CachedLogin? = null
 
     @Synchronized
-    fun start(context: Context, gameRoot: File, region: GameRegion) {
+    fun start(context: Context, gameRoot: File, region: GameRegion, gpu: GpuProfile) {
         val log = File(gameRoot, "${WowClientDownloader.FLAVOR_DIR}/Logs/Connection.log")
-        lastLaunch = Launch(log, log.length(), System.currentTimeMillis(), SystemClock.elapsedRealtime(), region, currentNetwork(context))
+        lastLaunch = Launch(log, log.length(), System.currentTimeMillis(), SystemClock.elapsedRealtime(), region, gpu, currentNetwork(context))
         cachedLogin = null
     }
 
@@ -94,6 +97,12 @@ internal object MobileLaunchDiagnostics {
         lastLaunch = launch.copy(guestExit = GuestExit(status, visible, foregroundService))
     }
 
+    @Synchronized
+    fun graphicsChecked(code: String) {
+        val launch = lastLaunch ?: return
+        lastLaunch = launch.copy(graphicsCode = code)
+    }
+
     fun summary(): LaunchReport? {
         val launch = lastLaunch ?: return null
         val connection = readConnection(launch)
@@ -101,6 +110,13 @@ internal object MobileLaunchDiagnostics {
             listOf(launch.runtime, launch.container, launch.frame), connection.state,
             launch.region, launch.network, launch.battleNetAppOpened, launch.guestExit,
             launch.browserStep?.label, connection.browserStalled,
+            launch.gpu,
+            launch.graphicsCode,
+            if (launch.graphicsCode != null) {
+                launch.log.parentFile?.parentFile?.let { recentGraphicsLog(it, launch.startTime) }.orEmpty()
+            } else {
+                emptyList()
+            },
         )
     }
 
@@ -139,6 +155,25 @@ internal object MobileLaunchDiagnostics {
     }
 }
 
+private fun recentGraphicsLog(gameDirectory: File, since: Long): List<String> =
+    listOf("wow-session-bridge_dxgi.log", "wow-session-bridge_d3d11.log").flatMap { name ->
+        val log = File(gameDirectory, name)
+        if (log.lastModified() < since) return@flatMap emptyList()
+        runCatching {
+            RandomAccessFile(log, "r").use { input ->
+                val length = input.length()
+                val offset = (length - 8192).coerceAtLeast(0)
+                input.seek(offset)
+                val text = ByteArray((length - offset).toInt()).also(input::readFully).toString(Charsets.UTF_8)
+                val completeLines = if (offset == 0L) text else text.substringAfter('\n', "")
+                completeLines.lineSequence().filter { line ->
+                    line.startsWith("err:") || line.startsWith("warn:") ||
+                        (line.startsWith("info:") && ("DXVK:" in line || "Vulkan:" in line || "PowerVR" in line))
+                }.map { it.take(300) }.take(16).toList()
+            }
+        }.getOrDefault(emptyList())
+    }.distinct()
+
 internal data class ConnectionSnapshot(val network: Network?, val label: Int)
 
 internal data class GuestExit(val status: Int, val visible: Boolean, val foregroundService: Boolean)
@@ -154,6 +189,9 @@ internal data class LaunchReport(
     val guestExit: GuestExit?,
     @StringRes val browserStep: Int?,
     val browserStalled: Boolean,
+    val gpu: GpuProfile,
+    val graphicsCode: String?,
+    val graphicsLog: List<String>,
 )
 
 private fun currentNetwork(context: Context): ConnectionSnapshot {
@@ -279,8 +317,17 @@ private fun formatDiagnostics(context: Context, elapsedSinceBoot: Long, data: La
         append(context.getString(R.string.mobile_diagnostics_no_attempt))
     } else {
         val (timings, state) = data
+        data.graphicsCode?.let { code ->
+            appendLine("${Build.MANUFACTURER} ${Build.MODEL} · Android ${Build.VERSION.RELEASE}")
+            appendLine(context.getString(R.string.mobile_graphics_profile, data.gpu.edition, data.gpu.graphicsWrapper))
+            appendLine(context.getString(R.string.mobile_graphics_check_result, code))
+            data.graphicsLog.forEach { appendLine(it) }
+            appendLine()
+        }
         appendLine(context.getString(R.string.mobile_diagnostics_region, context.getString(data.region.label)))
-        data.browserStep?.let { appendLine(context.getString(R.string.mobile_diagnostics_browser_step, context.getString(it))) }
+        if (data.graphicsCode == null || data.graphicsCode == "00000000") {
+            data.browserStep?.let { appendLine(context.getString(R.string.mobile_diagnostics_browser_step, context.getString(it))) }
+        }
         val network = currentNetwork(context)
         appendLine(context.getString(R.string.mobile_network_at_launch, context.getString(data.startNetwork.label)))
         if (network != data.startNetwork) {

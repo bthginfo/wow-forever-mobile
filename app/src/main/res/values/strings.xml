@@ -713,6 +713,10 @@
     <string name="mobile_open_authenticator">Authenticator</string>
     <string name="mobile_browser_login">Sign in to Battle.net</string>
     <string name="mobile_browser_starting">Starting Battle.net browser login…</string>
+    <string name="mobile_graphics_check_starting">Checking Direct3D 11…</string>
+    <string name="mobile_graphics_check_failed">The Direct3D 11 check failed with 0x%1$s. Open Startup and connection to copy the graphics report.</string>
+    <string name="mobile_graphics_check_result">Direct3D 11 graphics check · 0x%1$s</string>
+    <string name="mobile_graphics_profile">Graphics profile · %1$s · %2$s</string>
     <string name="mobile_browser_page">Waiting for sign-in in the browser.</string>
     <string name="mobile_browser_verifying">Completing Battle.net sign-in…</string>
     <string name="mobile_browser_launching">Starting WoW with the Battle.net session…</string>

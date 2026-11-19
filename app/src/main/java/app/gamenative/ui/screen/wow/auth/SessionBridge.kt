@@ -61,6 +61,14 @@ internal class SessionBridge : Closeable {
         private val input = DataInputStream(socket.getInputStream())
         private val output = DataOutputStream(socket.getOutputStream())
 
+        fun graphicsResult(): String {
+            val status = readFrame(17).toString(Charsets.US_ASCII)
+            if (!status.matches(Regex("GRAPHICS [0-9A-F]{8}"))) {
+                throw IOException("Invalid graphics check result")
+            }
+            return status.takeLast(8)
+        }
+
         fun device(): ByteArray = readFrame(4096)
 
         fun launch(token: ByteArray) {

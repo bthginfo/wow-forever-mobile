@@ -1175,7 +1175,6 @@ private fun Throwable.isPermissionDenied() =
 
 private const val PROTON_VERSION = "proton-11.0-90624-arm64ec"
 private const val WINE_ENTRY = "$PROTON_VERSION-1"
-private const val DXVK_VERSION = "2.4.1-wow-aarch64-test"
 
 /**
  * Reshapes the GPU's 16:9 render budget to the current window's aspect ratio so the game fills
@@ -1219,7 +1218,7 @@ private suspend fun prepareLaunch(
     onStatus: (String) -> Unit,
 ): String = launchLock.withLock {
     val region = GameRegion.current(context, gameRoot.path)
-    MobileLaunchDiagnostics.start(context, gameRoot, region)
+    MobileLaunchDiagnostics.start(context, gameRoot, region, gpu)
     check(File(gameRoot, BUILD_INFO).exists()) { context.getString(R.string.mobile_launcher_build_info_missing, BUILD_INFO, gameRoot.path) }
     try {
         ensureGameConfig(gameRoot, screenSize, GameRegion.saved(context))
@@ -1268,18 +1267,19 @@ private suspend fun prepareLaunch(
 private fun containerConfig(gameRoot: File, gpu: GpuProfile, screenSize: String, identity: WowMachineIdentity): JSONObject {
     val samsungEnv = if (Build.MANUFACTURER.equals("samsung", ignoreCase = true)) " FD_DEV_FEATURES=enable_tp_ubwc_flag_hint=1" else ""
     val turnipEnv = gpu.tuDebug?.let { " MESA_VK_WSI_PRESENT_MODE=mailbox TU_DEBUG=$it" }.orEmpty()
-    val envVars = "WRAPPER_MAX_IMAGE_COUNT=0 ZINK_DESCRIPTORS=lazy ZINK_DEBUG=compact,deck_emu MESA_SHADER_CACHE_DISABLE=false MESA_SHADER_CACHE_MAX_SIZE=512MB mesa_glthread=true WINEESYNC=0$turnipEnv VKD3D_SHADER_MODEL=6_0 PULSE_LATENCY_MSEC=144 ${WowMachineIdentity.HOSTNAME_ENV}=${identity.computerName}$samsungEnv"
+    val pixelLogEnv = if (BuildConfig.PIXEL_VULKAN_TEST) " DXVK_LOG_LEVEL=info DXVK_LOG_PATH=." else ""
+    val envVars = "WRAPPER_MAX_IMAGE_COUNT=0 ZINK_DESCRIPTORS=lazy ZINK_DEBUG=compact,deck_emu MESA_SHADER_CACHE_DISABLE=false MESA_SHADER_CACHE_MAX_SIZE=512MB mesa_glthread=true WINEESYNC=0$turnipEnv$pixelLogEnv VKD3D_SHADER_MODEL=6_0 PULSE_LATENCY_MSEC=144 ${WowMachineIdentity.HOSTNAME_ENV}=${identity.computerName}$samsungEnv"
     return JSONObject().apply {
         put("id", CONTAINER_ID)
         put("name", "WoW Forever")
         put("screenSize", screenSize)
         put("envVars", envVars)
-        put("graphicsDriver", "Wrapper")
+        put("graphicsDriver", gpu.graphicsWrapper)
         put("graphicsDriverVersion", gpu.driver)
         put("graphicsDriverConfig", gpu.graphicsDriverConfig)
         put("displayRenderer", "vulkan")
-        put("dxwrapper", "dxvk-$DXVK_VERSION-1")
-        put("dxwrapperConfig", "version=$DXVK_VERSION-1")
+        put("dxwrapper", "dxvk-${gpu.dxvkVersion}-1")
+        put("dxwrapperConfig", "version=${gpu.dxvkVersion}-1")
         put("wineVersion", WINE_ENTRY)
         put("containerVariant", "bionic")
         put("fexcoreVersion", "2609-0")
@@ -1441,10 +1441,10 @@ private fun installBundledComponents(context: Context, gpu: GpuProfile, onStatus
             listOf("profile.json", "bin/wine", "prefixPack.txz").all { File(staging, it).length() > 0 }
     }
 
-    val dxvkDir = File(ContentsManager.getContentTypeDir(context, ContentProfile.ContentType.CONTENT_TYPE_DXVK), DXVK_VERSION)
+    val dxvkDir = File(ContentsManager.getContentTypeDir(context, ContentProfile.ContentType.CONTENT_TYPE_DXVK), gpu.dxvkVersion)
     installComponent(dxvkDir, R.string.mobile_launcher_dxvk_install, onStatus, context) { staging ->
-        TarCompressorUtils.extract(TarCompressorUtils.Type.ZSTD, context, "bundled_components/dxvk-$DXVK_VERSION.wcp", staging) &&
-            File(staging, "profile.json").length() > 0
+        TarCompressorUtils.extract(TarCompressorUtils.Type.ZSTD, context, "bundled_components/dxvk-${gpu.dxvkVersion}.wcp", staging) &&
+            listOf("profile.json", "system32/d3d11.dll", "system32/dxgi.dll").all { File(staging, it).length() > 0 }
     }
 }
 
