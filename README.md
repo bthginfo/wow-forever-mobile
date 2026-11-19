@@ -47,6 +47,10 @@ WoW Forever/
 
 The launcher downloads the matching `_forever_/Wow-ARM64.exe` from Blizzard when needed. A fresh setup downloads the ARM64 client and archive indexes first. WoW caches additional zones and assets as you play.
 
+### Standalone .16 test build
+
+Install the standalone APK alongside **WoW Forever Mobile** .15. It appears as **WoW Forever Mobile Standalone** and keeps its own app settings. Grant storage access and use **Find existing game files** to select your WoW folder. Close the other launcher before starting the game from the same folder.
+
 ## Touch controls
 
 | Control | What it does |
@@ -101,6 +105,8 @@ python3 tools/trim_proton_i386.py app/src/main/assets/bundled_components/proton-
 The APK is written to `app/build/outputs/apk/modern/release/`. The runtime download script verifies each component against `tools/components.sha256`.
 
 A local release signing configuration can be provided in `app/keystores/keystore.properties`. Keep keystores and passwords outside version control. This release uses application ID `app.wowforever.mobile.browser`.
+
+Pass `-PforeverStandalone=true` to Gradle to build the separately installable test variant with application ID `app.wowforever.mobile.standalone`.
 
 ---
 

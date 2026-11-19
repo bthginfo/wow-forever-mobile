@@ -43,5 +43,26 @@ jobs:
           sh tools/wow-session-bridge/test.sh
           sh tools/wow-session-bridge/build.sh "$RUNNER_TEMP/$LLVM_MINGW/bin/aarch64-w64-mingw32-clang" \
             app/src/main/assets/wow-session-bridge.exe
-      - name: Compile the APK and run Android unit tests
-        run: ./gradlew --no-daemon :app:assembleModernRelease :app:testModernReleaseUnitTest
+      - name: Compile the standalone APK and run Android unit tests
+        run: ./gradlew --no-daemon -PforeverStandalone=true :app:assembleModernRelease :app:testModernReleaseUnitTest
+      - name: Verify the standalone APK
+        run: |
+          tools="$ANDROID_HOME/build-tools/35.0.0"
+          apk=app/build/outputs/apk/modern/release/app-modern-release.apk
+          "$tools/aapt2" dump badging "$apk" > "$RUNNER_TEMP/standalone-badging.txt"
+          grep -F "package: name='app.wowforever.mobile.standalone' versionCode='261' versionName='2.4.4-mobile.16'" \
+            "$RUNNER_TEMP/standalone-badging.txt"
+          "$tools/apksigner" verify --print-certs "$apk"
+          for source in app/src/main/assets/ForeverTouch/*; do
+            unzip -p "$apk" "assets/ForeverTouch/${source##*/}" | cmp "$source" -
+          done
+          cp "$apk" WoW-Forever-Mobile-2.4.4-mobile.16-Standalone.apk
+          sha256sum WoW-Forever-Mobile-2.4.4-mobile.16-Standalone.apk > SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WoW-Forever-Mobile-2.4.4-mobile.16-Standalone
+          path: |
+            WoW-Forever-Mobile-2.4.4-mobile.16-Standalone.apk
+            SHA256SUMS
+          if-no-files-found: error
+          compression-level: 0

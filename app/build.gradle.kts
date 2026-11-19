@@ -18,6 +18,7 @@ val keystoreProperties: Properties? = if (keystorePropertiesFile.exists()) {
         load(FileInputStream(keystorePropertiesFile))
     }
 } else null
+val standaloneBuild = providers.gradleProperty("foreverStandalone").orNull == "true"
 
 android {
     namespace = "app.gamenative"
@@ -38,11 +39,12 @@ android {
     }
 
     defaultConfig {
-        applicationId = "app.wowforever.mobile.browser"
+        applicationId = if (standaloneBuild) "app.wowforever.mobile.standalone" else "app.wowforever.mobile.browser"
 
         minSdk = 26
 
         manifestPlaceholders["screenOrientation"] = "unspecified"
+        manifestPlaceholders["mobileAppLabel"] = if (standaloneBuild) "WoW Forever Mobile Standalone" else "@string/mobile_app_name"
         buildConfigField("boolean", "XR_BUILD", "false")
 
         versionCode = 261
