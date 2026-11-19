@@ -19,6 +19,7 @@ val keystoreProperties: Properties? = if (keystorePropertiesFile.exists()) {
     }
 } else null
 val standaloneBuild = providers.gradleProperty("foreverStandalone").orNull == "true"
+val pixelVulkanTestBuild = providers.gradleProperty("foreverPixelVulkanTest").orNull == "true"
 
 android {
     namespace = "app.gamenative"
@@ -39,16 +40,25 @@ android {
     }
 
     defaultConfig {
-        applicationId = if (standaloneBuild) "app.wowforever.mobile.standalone" else "app.wowforever.mobile.browser"
+        applicationId = when {
+            pixelVulkanTestBuild -> "app.wowforever.mobile.pixeltest"
+            standaloneBuild -> "app.wowforever.mobile.standalone"
+            else -> "app.wowforever.mobile.browser"
+        }
 
         minSdk = 26
 
         manifestPlaceholders["screenOrientation"] = "unspecified"
-        manifestPlaceholders["mobileAppLabel"] = if (standaloneBuild) "WoW Forever Mobile Standalone" else "@string/mobile_app_name"
+        manifestPlaceholders["mobileAppLabel"] = when {
+            pixelVulkanTestBuild -> "WoW Forever Mobile Pixel Test"
+            standaloneBuild -> "WoW Forever Mobile Standalone"
+            else -> "@string/mobile_app_name"
+        }
         buildConfigField("boolean", "XR_BUILD", "false")
+        buildConfigField("boolean", "PIXEL_VULKAN_TEST", pixelVulkanTestBuild.toString())
 
         versionCode = 261
-        versionName = "2.4.4-mobile.16"
+        versionName = if (pixelVulkanTestBuild) "2.4.4-mobile.16-pixel.1" else "2.4.4-mobile.16"
 
         buildConfigField("boolean", "GOLD", "false")
         val iconValue = "@mipmap/ic_launcher"

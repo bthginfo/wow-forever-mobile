@@ -51,6 +51,12 @@ The launcher downloads the matching `_forever_/Wow-ARM64.exe` from Blizzard when
 
 Install the standalone APK alongside **WoW Forever Mobile** .15. It appears as **WoW Forever Mobile Standalone** and keeps its own app settings. Grant storage access and use **Find existing game files** to select your WoW folder. Close the other launcher before starting the game from the same folder.
 
+### Pixel 10 Vulkan test build
+
+**WoW Forever Mobile Pixel Test** installs alongside the other app versions. On Pixel 10, Pixel 10 Pro, Pixel 10 Pro XL, and Pixel 10 Pro Fold, it uses the Android Vulkan driver through the existing wrapper and defaults to a 720p render budget.
+
+Grant storage access, then use **Find existing game files** if WoW is already installed. Close the other launcher before starting from the same folder. Sign in and load a character to test rendering. If startup fails, copy the **Startup and connection** report and include the exact graphics error and Android version.
+
 ## Touch controls
 
 | Control | What it does |
@@ -107,6 +113,8 @@ The APK is written to `app/build/outputs/apk/modern/release/`. The runtime downl
 A local release signing configuration can be provided in `app/keystores/keystore.properties`. Keep keystores and passwords outside version control. This release uses application ID `app.wowforever.mobile.browser`.
 
 Pass `-PforeverStandalone=true` to Gradle to build the separately installable test variant with application ID `app.wowforever.mobile.standalone`.
+
+Pass `-PforeverPixelVulkanTest=true` to build the Pixel test APK with application ID `app.wowforever.mobile.pixeltest`.
 
 ---
 

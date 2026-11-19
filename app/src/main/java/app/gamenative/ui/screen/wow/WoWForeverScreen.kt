@@ -74,7 +74,6 @@ import com.winlator.container.ContainerManager
 import com.winlator.contents.ContentProfile
 import com.winlator.contents.ContentsManager
 import com.winlator.core.FileUtils
-import com.winlator.core.GPUInformation
 import com.winlator.core.TarCompressorUtils
 import com.winlator.xenvironment.ImageFs
 import com.winlator.xenvironment.ImageFsInstaller
@@ -1174,30 +1173,9 @@ private class StorageAccessDeniedException(cause: Throwable) : Exception(cause)
 private fun Throwable.isPermissionDenied() =
     message?.let { "EPERM" in it || "Operation not permitted" in it } == true
 
-private const val DEFAULT_DRIVER = "Turnip-WoW-scheduler-test"
-private const val ADRENO_8XX_DRIVER = "Turnip-V32-RP6sched"
 private const val PROTON_VERSION = "proton-11.0-90624-arm64ec"
 private const val WINE_ENTRY = "$PROTON_VERSION-1"
 private const val DXVK_VERSION = "2.4.1-wow-aarch64-test"
-
-private data class GpuProfile(val driver: String, val tuDebug: String, val screenSize: String, val label: String, val edition: String) {
-    companion object {
-        fun detect(context: Context) = if (isAdreno8xxDevice(context)) {
-            GpuProfile(ADRENO_8XX_DRIVER, "noconform,sysmem", "1280x720", "Adreno 8xx", "Snapdragon 8 Elite / Adreno 8xx")
-        } else {
-            GpuProfile(DEFAULT_DRIVER, "noconform", "1600x900", "Adreno 7xx", "Snapdragon 8 Series / Adreno 7xx")
-        }
-
-        private fun isAdreno8xxDevice(context: Context): Boolean {
-            if (GPUInformation.isAdreno8Elite(context)) return true
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                val soc = Build.SOC_MODEL
-                if (listOf("SM8735", "SM8750", "SM8845", "SM8850").any { soc.contains(it, ignoreCase = true) }) return true
-            }
-            return Build.HARDWARE.contains("sun", ignoreCase = true)
-        }
-    }
-}
 
 /**
  * Reshapes the GPU's 16:9 render budget to the current window's aspect ratio so the game fills
@@ -1289,7 +1267,8 @@ private suspend fun prepareLaunch(
 
 private fun containerConfig(gameRoot: File, gpu: GpuProfile, screenSize: String, identity: WowMachineIdentity): JSONObject {
     val samsungEnv = if (Build.MANUFACTURER.equals("samsung", ignoreCase = true)) " FD_DEV_FEATURES=enable_tp_ubwc_flag_hint=1" else ""
-    val envVars = "WRAPPER_MAX_IMAGE_COUNT=0 ZINK_DESCRIPTORS=lazy ZINK_DEBUG=compact,deck_emu MESA_SHADER_CACHE_DISABLE=false MESA_SHADER_CACHE_MAX_SIZE=512MB mesa_glthread=true WINEESYNC=0 MESA_VK_WSI_PRESENT_MODE=mailbox TU_DEBUG=${gpu.tuDebug} VKD3D_SHADER_MODEL=6_0 PULSE_LATENCY_MSEC=144 ${WowMachineIdentity.HOSTNAME_ENV}=${identity.computerName}$samsungEnv"
+    val turnipEnv = gpu.tuDebug?.let { " MESA_VK_WSI_PRESENT_MODE=mailbox TU_DEBUG=$it" }.orEmpty()
+    val envVars = "WRAPPER_MAX_IMAGE_COUNT=0 ZINK_DESCRIPTORS=lazy ZINK_DEBUG=compact,deck_emu MESA_SHADER_CACHE_DISABLE=false MESA_SHADER_CACHE_MAX_SIZE=512MB mesa_glthread=true WINEESYNC=0$turnipEnv VKD3D_SHADER_MODEL=6_0 PULSE_LATENCY_MSEC=144 ${WowMachineIdentity.HOSTNAME_ENV}=${identity.computerName}$samsungEnv"
     return JSONObject().apply {
         put("id", CONTAINER_ID)
         put("name", "WoW Forever")
@@ -1297,7 +1276,7 @@ private fun containerConfig(gameRoot: File, gpu: GpuProfile, screenSize: String,
         put("envVars", envVars)
         put("graphicsDriver", "Wrapper")
         put("graphicsDriverVersion", gpu.driver)
-        put("graphicsDriverConfig", "version=${gpu.driver},adrenotoolsTurnip=1,resourceType=buffer,bcnEmulation=auto,quality=high")
+        put("graphicsDriverConfig", gpu.graphicsDriverConfig)
         put("displayRenderer", "vulkan")
         put("dxwrapper", "dxvk-$DXVK_VERSION-1")
         put("dxwrapperConfig", "version=$DXVK_VERSION-1")
@@ -1448,11 +1427,12 @@ private suspend fun prepareRuntime(context: Context, onStatus: (String) -> Unit)
 private fun freeInternalMiB(context: Context) = context.filesDir.usableSpace / (1024 * 1024)
 
 private fun installBundledComponents(context: Context, gpu: GpuProfile, onStatus: (String) -> Unit) {
-    val driverAsset = if (gpu.driver == ADRENO_8XX_DRIVER) "turnip-V32-RP6sched.zip" else "turnip-wow-scheduler-test.zip"
-    val driverDir = File(context.filesDir, "contents/adrenotools/${gpu.driver}")
-    installComponent(driverDir, R.string.mobile_launcher_graphics_install, onStatus, context) { staging ->
-        FileUtils.extractZipFromAssets(context, "bundled_components/$driverAsset", staging) &&
-            File(staging, "meta.json").length() > 0
+    gpu.bundledDriver?.let { driverAsset ->
+        val driverDir = File(context.filesDir, "contents/adrenotools/${gpu.driver}")
+        installComponent(driverDir, R.string.mobile_launcher_graphics_install, onStatus, context) { staging ->
+            FileUtils.extractZipFromAssets(context, "bundled_components/$driverAsset", staging) &&
+                File(staging, "meta.json").length() > 0
+        }
     }
 
     val protonDir = File(ImageFs.getSharedProtonDir(context), PROTON_VERSION)
