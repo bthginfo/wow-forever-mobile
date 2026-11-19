@@ -1,8 +1,13 @@
 # WoW Forever Mobile
 
-## [⬇ Download Android APK](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.15/WoW-Forever-Mobile-2.4.4-mobile.15.apk)
+## Android downloads
 
-**2.4.4-mobile.15 · Android 10+ · ARM64** · [Release notes](https://github.com/bthginfo/wow-forever-mobile/releases/tag/v2.4.4-mobile.15)
+| APK | Devices |
+| --- | --- |
+| [Standard .16 Standalone](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.16/WoW-Forever-Mobile-2.4.4-mobile.16-Standalone.apk) | Snapdragon 8 series with Adreno 7xx or 8xx |
+| [Pixel 9 and 10 · .16-pixel.5](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.16/WoW-Forever-Mobile-2.4.4-mobile.16-Pixel-Test-5.apk) | Pixel 9 and 10 models listed below |
+
+**Android 10+ · ARM64** · [Release notes](https://github.com/bthginfo/wow-forever-mobile/releases/tag/v2.4.4-mobile.16)
 
 An Android launcher and touch interface for Blizzard’s Windows ARM64 WoW Forever client. The launcher runs the client on the phone using Wine/Proton. It includes a browser-based Battle.net login, Android keyboard and clipboard controls, and a configurable in-game touch HUD.
 
@@ -12,7 +17,7 @@ An Android launcher and touch interface for Blizzard’s Windows ARM64 WoW Forev
 | --- | --- |
 | GameNative-based Android launcher | Prepares the Wine prefix, mounts the game folder and presents the game through its X server. |
 | Wine/Proton 11 ARM64EC | Provides the Windows environment for the ARM64 game executable. |
-| ARM64 DXVK and Mesa Turnip | Translate Direct3D 11 to Vulkan and drive the Adreno GPU. |
+| ARM64 DXVK and Vulkan | Translate Direct3D 11 to Vulkan. The standard build uses Mesa Turnip for Adreno. The Pixel build uses Android's Mali or PowerVR driver. |
 | Battle.net browser sign-in | Opens Battle.net’s sign-in page and passes a game session to the ARM64 Wine helper. |
 | Forever Touch Lua add-on | Scans populated action slots and builds editable touch arcs for spells and items. |
 
@@ -20,15 +25,15 @@ This is an unofficial launcher for players with access to WoW Forever through th
 
 ## Requirements
 
-- A 64-bit Android phone, tablet or handheld with a Snapdragon 8-series SoC and an Adreno 7xx or 8xx GPU. The runtime is designed for Android 10 and later.
+- A 64-bit device that matches one of the two APKs above. The runtime is designed for Android 10 and later.
 - Several GB of free internal space for the app and its Wine environment. The game folder can grow past 50 GB as it caches more data.
 - A Battle.net account with access to WoW Forever. Install the Battle.net Android app if you use its Authenticator.
 - Wi-Fi for the first download. A computer is optional for players who already have game files to copy.
 
 ## Install and set up
 
-1. **Install the APK.** Use **Download Android APK** above and open the downloaded file. If Android prompts for installation permission, allow installs from the browser or file manager you used. Version .15 updates **WoW Forever Mobile** .14 and carries over its app settings. For a fresh installation, continue with the setup below.
-2. **Choose your language.** Open **WoW Forever Mobile** and select **English** or **Deutsch**. You can change it later under **Language** in the launcher. The selection covers setup, the launcher’s login and connection UI, the touch toolbar, and the mobile skill editor. WoW and the Battle.net website manage the language of their own content.
+1. **Install the APK for your device.** Open the downloaded file. If Android prompts for installation permission, allow installs from the browser or file manager you used.
+2. **Choose your language.** Open the installed launcher and select **English** or **Deutsch**. You can change it later under **Language** in the launcher. The selection covers setup, the launcher’s login and connection UI, the touch toolbar, and the mobile skill editor. WoW and the Battle.net website manage the language of their own content.
 3. **Grant storage access.** The launcher asks for **All files access** so it can read and update the game folder on Android’s shared storage.
 4. **Set your game folder.** Use **Download and install** for a fresh setup. For files you already have, use **Find existing game files** and select their installation folder. The default is `/storage/emulated/0/WoW Forever/`.
 5. **Check Region and Resolution.** The launcher suggests a Battle.net region from the Android country setting on a fresh setup. It uses Europe for supported European locales, Korea for Korea, Taiwan for Taiwan and Hong Kong, and Americas as the fallback. Choose your account’s region in the launcher if you prefer a different one. The app saves that choice. Select **720p**, **900p**, or **1080p** to suit your device.
@@ -46,6 +51,25 @@ WoW Forever/
 ```
 
 The launcher downloads the matching `_forever_/Wow-ARM64.exe` from Blizzard when needed. A fresh setup downloads the ARM64 client and archive indexes first. WoW caches additional zones and assets as you play.
+
+### Standard .16 Standalone
+
+The standard .16 APK appears as **WoW Forever Mobile Standalone** and installs alongside the older .15 app with its own settings. Grant storage access and use **Find existing game files** to reuse your WoW folder. The original app is available from the [.15 release](https://github.com/bthginfo/wow-forever-mobile/releases/tag/v2.4.4-mobile.15).
+
+### Pixel 9 and 10
+
+Use the **Pixel 9 and 10** APK for these models. The app selects the Android Vulkan driver for each family through the GameNative wrapper.
+
+| Model | Graphics driver |
+| --- | --- |
+| Pixel 9, 9 Pro, 9 Pro XL and 9 Pro Fold | Mali system Vulkan |
+| Pixel 10, 10 Pro, 10 Pro XL and 10 Pro Fold | PowerVR system Vulkan |
+
+A player confirmed the game starts on **Pixel 9 Pro XL with Android 17**. Pixel 10 support is experimental and still needs an on-device game test.
+
+The APK appears as **WoW Forever Mobile Pixel Test** and updates earlier Pixel Test versions. It can be installed alongside the standard app. After granting storage access, use **Find existing game files** to reuse your WoW folder. Close the other launcher before starting WoW from the same folder.
+
+The Pixel build checks Direct3D 11 before opening Battle.net sign-in. If the graphics check fails, open **Startup and connection** and tap **Copy** to share the selected graphics profile, error code and available DXVK messages.
 
 ## Touch controls
 
@@ -88,6 +112,8 @@ Fullscreen is on by default. Open **More controls** in the game toolbar to enter
 
 ## Build from source
 
+The [standard .16 source](https://github.com/bthginfo/wow-forever-mobile/tree/v2.4.4-mobile.16) and the [Pixel 9 and 10 source](https://github.com/bthginfo/wow-forever-mobile/tree/android-pixel-vulkan) have their own build instructions.
+
 Use JDK 17, Android SDK Platform 36, build-tools 35.0.0, and NDK 27.3.13750724. Point `local.properties` at your Android SDK. For a fresh checkout, build the ARM64 Wine login helper into `app/src/main/assets/wow-session-bridge.exe`. [Helper build and test instructions](tools/wow-session-bridge/README.md)
 
 ```bash
@@ -98,7 +124,7 @@ python3 tools/trim_proton_i386.py app/src/main/assets/bundled_components/proton-
 
 The APK is written to `app/build/outputs/apk/modern/release/`. The runtime download script verifies each component against `tools/components.sha256`.
 
-A local release signing configuration can be provided in `app/keystores/keystore.properties`. Keep keystores and passwords outside version control. This release uses application ID `app.wowforever.mobile.browser`.
+A local release signing configuration can be provided in `app/keystores/keystore.properties`. Keep keystores and passwords outside version control. The default Gradle build uses application ID `app.wowforever.mobile.browser`.
 
 ---
 
