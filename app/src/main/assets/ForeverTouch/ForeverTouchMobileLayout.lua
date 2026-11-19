@@ -37,10 +37,29 @@ for _, side in ipairs(SIDES) do
     groups[side] = { side = side, panel = panel, editor = editor, buttons = {}, previews = {} }
 end
 
-local live, defaults, desktopRecords
+local live, defaults, desktopRecords, preferences
 local draft, selected, dragFrom, moving
 local refreshSlots, updateEditor
 local pendingRefresh, refreshQueued = false, false
+
+local function preferenceRevision(profile)
+    if type(profile) ~= "table" or not next(profile) then return -1 end
+    return type(profile.revision) == "number" and profile.revision or 0
+end
+
+local function loadPreferences()
+    local character = UnitGUID("player")
+    if type(ForeverTouchProfiles) ~= "table" then ForeverTouchProfiles = {} end
+    local profiles = ForeverTouchProfiles
+    local key = not isSecret(character) and type(character) == "string" and character ~= "" and character or nil
+    local primary, backup = ForeverTouchPreferences, key and profiles[key]
+
+    -- Keep the legacy character file and a second copy scoped to the same character.
+    if preferenceRevision(backup) > preferenceRevision(primary) then primary = backup end
+    preferences = type(primary) == "table" and primary or {}
+    ForeverTouchPreferences = preferences
+    if key then profiles[key] = preferences end
+end
 
 local function makeSkillArt(button)
     button.rim = button:CreateTexture(nil, "BACKGROUND")
@@ -146,7 +165,7 @@ local function layoutActions()
     local scale = height / DESIGN_HEIGHT
     local viewport = width / scale
     local profile = draft and draft.slots or live
-    local positions = draft and draft.positions or ForeverTouchPreferences.mobileArcPositions
+    local positions = draft and draft.positions or preferences.mobileArcPositions
     for _, side in ipairs(SIDES) do
         local group = groups[side]
         local arcWidth, arcHeight, points = arcGeometry(#profile[side], viewport, side == "right")
@@ -290,6 +309,7 @@ for _, side in ipairs(SIDES) do
                 x = normalizedCoordinate(left - (UIParent:GetLeft() or 0) / scale, travelX),
                 y = normalizedCoordinate(bottom - (UIParent:GetBottom() or 0) / scale, travelY),
             }
+            draft.moved = true
         end
         layoutActions()
     end)
@@ -353,7 +373,7 @@ local function openEditor()
     if draft or not live then return end
     draft = {
         slots = Actions.copyProfile(live),
-        positions = copyPositions(ForeverTouchPreferences.mobileArcPositions),
+        positions = copyPositions(preferences.mobileArcPositions),
     }
     for _, side in ipairs(SIDES) do groups[side].panel:SetAlpha(0) end
     updateEditor()
@@ -374,8 +394,8 @@ end
 local function finishEditing(save)
     if not draft then return end
     stopMoving()
-    if save then
-        local preferences = ForeverTouchPreferences
+    local changed = save and (draft.changed or draft.reset or draft.moved)
+    if changed then
         preferences.mobileArcPositions = draft.positions
         if draft.reset then
             preferences.mobileSlots, preferences.order, preferences.favorites = nil, nil, nil
@@ -383,12 +403,18 @@ local function finishEditing(save)
         if draft.changed then
             preferences.mobileSlots = Actions.independentProfile(draft.slots, desktopRecords)
         end
+        preferences.revision = preferenceRevision(preferences) + 1
     end
     picker:Hide()
     draft, selected, dragFrom = nil, nil, nil
     editShield:Hide()
     for _, side in ipairs(SIDES) do groups[side].panel:SetAlpha(1) end
     refreshSlots()
+    if changed and not InCombatLockdown() then
+        -- WoW writes SavedVariables on reload. Call from the Save click so the client can flush immediately.
+        local reload = C_UI and C_UI.Reload or ReloadUI
+        if reload then reload() end
+    end
 end
 
 local function editorBinding(name, action)
@@ -588,6 +614,7 @@ chatButton:SetScript("OnClick", function()
 end)
 
 refreshSlots = function()
+    if not preferences then return end
     if InCombatLockdown() or draft then
         pendingRefresh = true
         return
@@ -597,7 +624,6 @@ refreshSlots = function()
     local keys
     keys, desktopRecords = Actions.desktop()
     defaults = Actions.splitDesktop(keys, desktopRecords)
-    local preferences = ForeverTouchPreferences
     if type(preferences.mobileSlots) == "table" then
         live = Actions.copyProfile(preferences.mobileSlots)
     elseif preferences.order or preferences.favorites then
@@ -659,7 +685,7 @@ local function queueRefresh()
 end
 
 for _, event in ipairs({
-    "PLAYER_ENTERING_WORLD", "ACTIONBAR_SLOT_CHANGED", "ACTIONBAR_PAGE_CHANGED",
+    "PLAYER_LOGIN", "PLAYER_ENTERING_WORLD", "ACTIONBAR_SLOT_CHANGED", "ACTIONBAR_PAGE_CHANGED",
     "DISPLAY_SIZE_CHANGED", "UI_SCALE_CHANGED", "PLAYER_REGEN_ENABLED",
     "ACTIONBAR_UPDATE_COOLDOWN", "ACTIONBAR_UPDATE_USABLE", "BAG_UPDATE_DELAYED",
     "SPELLS_CHANGED", "UPDATE_BONUS_ACTIONBAR", "UPDATE_OVERRIDE_ACTIONBAR",
@@ -669,8 +695,10 @@ for _, event in ipairs({
 end
 
 events:SetScript("OnEvent", function(_, event)
-    if event == "PLAYER_ENTERING_WORLD" then
-        if type(ForeverTouchPreferences) ~= "table" then ForeverTouchPreferences = {} end
+    if event == "PLAYER_LOGIN" then
+        loadPreferences()
+    elseif event == "PLAYER_ENTERING_WORLD" then
+        if not preferences then loadPreferences() end
         C_Timer.After(0, function()
             if InCombatLockdown() then
                 pendingRefresh = true
@@ -693,7 +721,7 @@ events:SetScript("OnEvent", function(_, event)
     elseif event == "ACTIONBAR_SLOT_CHANGED" and InCombatLockdown() then
         pendingRefresh = true
         refreshLiveButtons(true)
-    elseif ForeverTouchPreferences then
+    elseif preferences then
         queueRefresh()
     end
 end)
