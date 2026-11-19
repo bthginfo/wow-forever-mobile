@@ -45,6 +45,12 @@ class AppLanguageTest {
                 assertTrue(toc.startsWith("## X-ForeverTouch-Language: ${language.tag}\n"))
                 assertEquals(toc, addon.resolve("ForeverTouch_Camelot.toc").readText())
                 assertTrue("## SavedVariablesPerCharacter: ForeverTouchPreferences" in toc)
+                assertTrue("ForeverTouchInputMode.lua" in toc.lineSequence())
+                val inputMode = addon.resolve("ForeverTouchInputMode.lua")
+                updateMobileAddonInputMode(root, true)
+                assertEquals("local _, addon = ...\naddon.desktopInput = true\n", inputMode.readText())
+                updateMobileAddonInputMode(root, false)
+                assertEquals("local _, addon = ...\naddon.desktopInput = false\n", inputMode.readText())
             }
         } finally {
             Locale.setDefault(previous)

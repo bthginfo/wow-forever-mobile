@@ -2,7 +2,7 @@ name: Android patch checks
 
 on:
   push:
-    branches: [android-skill-persistence]
+    branches: [android-skill-persistence, desktop-input]
 
 permissions:
   contents: read
@@ -20,7 +20,7 @@ jobs:
           distribution: temurin
           java-version: "17"
       - uses: gradle/actions/setup-gradle@v4
-      - name: Test Forever Touch persistence
+      - name: Test Forever Touch profiles and input modes
         run: |
           command -v lua5.4 > /dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq lua5.4; }
           lua5.4 tools/test_forever_touch_profiles.lua

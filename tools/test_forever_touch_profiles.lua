@@ -1,6 +1,7 @@
 -- Run with: lua tools/test_forever_touch_profiles.lua [add-on source directory]
 local source = (arg and arg[1]) or "app/src/main/assets/ForeverTouch"
-local frames, event, choose, player, combat, reloads, disk
+local frames, event, choose, player, combat, reloads, disk, bindings
+unpack = table.unpack
 
 local function copy(value)
     if type(value) ~= "table" then return value end
@@ -22,11 +23,24 @@ local methods = {
     GetHeight = function(self) return self.height end,
     GetSize = function(self) return self.width, self.height end,
     SetSize = function(self, width, height) self.width, self.height = width, height end,
+    SetHeight = function(self, height) self.height = height end,
+    SetAlpha = function(self, alpha) self.alpha = alpha end,
+    GetAlpha = function(self) return self.alpha end,
+    SetMouseClickEnabled = function(self, enabled) self.mouseClick = enabled end,
+    SetMouseMotionEnabled = function(self, enabled) self.mouseMotion = enabled end,
+    IsMouseClickEnabled = function(self) return self.mouseClick end,
+    IsMouseMotionEnabled = function(self) return self.mouseMotion end,
+    GetChildren = function() end,
+    SetClipsChildren = function(self, clips) self.clips = clips end,
+    DoesClipChildren = function(self) return self.clips end,
     SetScale = function(self, scale) self.scale = scale end,
     GetEffectiveScale = function(self) return rawget(self, "scale") or 1 end,
     GetLeft = function(self) return rawget(self, "left") or 0 end,
     GetBottom = function(self) return rawget(self, "bottom") or 0 end,
     SetPoint = function(self, ...) self.point = {...} end,
+    GetPoint = function(self) return unpack(self.point) end,
+    GetNumPoints = function(self) return rawget(self, "point") and 1 or 0 end,
+    ClearAllPoints = function(self) self.point = nil end,
     IsShown = function(self) return self.shown end,
     Show = function(self) self.shown = true end,
     Hide = function(self) self.shown = false end,
@@ -50,8 +64,16 @@ function UnitGUID() return player end
 function InCombatLockdown() return combat end
 function GetActionInfo(slot) if slot == 1 then return "spell", 101 end end
 function GetActionTexture(slot) if slot == 1 then return 1001 end end
-function SetOverrideBinding() end
-function SetOverrideBindingClick() end
+function hooksecurefunc(frame, method, callback)
+    local original = frame[method]
+    frame[method] = function(self, ...)
+        original(self, ...)
+        callback(self, ...)
+    end
+end
+function ClearOverrideBindings() bindings = {} end
+function SetOverrideBinding(_, _, key, action) bindings[key] = action end
+SetOverrideBindingClick = SetOverrideBinding
 function SaveBindings() error("The HUD must leave WoW's keyboard bindings alone") end
 C_Timer = { After = function(_, callback) callback() end }
 C_UI = {
@@ -62,11 +84,22 @@ C_UI = {
 }
 C_Spell = { GetSpellName = tostring }
 
-local function login(guid, characterSaved, accountSaved)
+local function login(guid, characterSaved, accountSaved, desktop)
     frames, player, combat, reloads, disk = {}, guid, false, 0, nil
     ForeverTouchPreferences, ForeverTouchProfiles = nil, nil
     UIParent = CreateFrame("Frame", "UIParent")
     UIParent:SetSize(1536, 720)
+    MainActionBar = CreateFrame("Frame", "MainActionBar", UIParent)
+    MainActionBar:SetAlpha(.85)
+    MainActionBar:SetMouseClickEnabled(true)
+    MainActionBar:SetMouseMotionEnabled(false)
+    DEFAULT_CHAT_FRAME = CreateFrame("Frame", "ChatFrame1", UIParent)
+    DEFAULT_CHAT_FRAME:SetSize(360, 150)
+    DEFAULT_CHAT_FRAME:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 22, 38)
+    ObjectiveTrackerFrame = CreateFrame("Frame", "ObjectiveTrackerFrame", UIParent)
+    ObjectiveTrackerFrame:SetSize(300, 400)
+    ObjectiveTrackerFrame:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -10, -30)
+    ObjectiveTrackerFrame:SetClipsChildren(false)
     local addon = {
         createSlotPicker = function()
             local picker = CreateFrame("Frame")
@@ -80,6 +113,8 @@ local function login(guid, characterSaved, accountSaved)
             return picker
         end,
     }
+    assert(loadfile(source .. "/ForeverTouchInputMode.lua"))("ForeverTouch", addon)
+    if desktop then addon.desktopInput = true end
     assert(loadfile(source .. "/ForeverTouchActions.lua"))("ForeverTouch", addon)
     assert(loadfile(source .. "/ForeverTouchMobileLayout.lua"))("ForeverTouch", addon)
     -- The client loads SavedVariables after running the add-on's Lua chunks.
@@ -90,6 +125,11 @@ end
 
 local function click(name)
     local frame = frames["ForeverTouch" .. name]
+    frame.scripts.OnClick(frame)
+end
+
+local function modeKey(key)
+    local frame = assert(frames[bindings[key]], "Missing input-mode binding: " .. key)
     frame.scripts.OnClick(frame)
 end
 
@@ -157,3 +197,34 @@ combat = false
 event(nil, "PLAYER_REGEN_ENABLED")
 assert(frames.ForeverTouchLeftAction1.attributes.item == "item:501")
 print("Forever Touch profiles passed: legacy data, save/relog, file fallback, character separation, cancel, reset and combat.")
+
+local desktopKey, touchKey = "ALT-CTRL-SHIFT-F11", "ALT-CTRL-SHIFT-F12"
+login(first, primary)
+assert(MainActionBar.alpha == 0 and not MainActionBar.mouseClick)
+assert(DEFAULT_CHAT_FRAME:GetWidth() ~= 360 and ObjectiveTrackerFrame:DoesClipChildren())
+modeKey(desktopKey)
+assert(MainActionBar.alpha == .85 and MainActionBar.mouseClick and not MainActionBar.mouseMotion)
+assert(DEFAULT_CHAT_FRAME:GetWidth() == 360 and DEFAULT_CHAT_FRAME.point[4] == 22)
+assert(ObjectiveTrackerFrame:GetHeight() == 400 and not ObjectiveTrackerFrame:DoesClipChildren())
+assert(not frames.ForeverTouchLeft.shown and not frames.ForeverTouchRight.shown)
+assert(bindings.W == nil and bindings["CTRL-SHIFT-F8"] == nil and bindings[touchKey] ~= nil)
+event(nil, "DISPLAY_SIZE_CHANGED")
+event(nil, "PLAYER_ENTERING_WORLD")
+assert(MainActionBar.alpha == .85 and DEFAULT_CHAT_FRAME.point[4] == 22)
+
+DEFAULT_CHAT_FRAME:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 41, 38)
+modeKey(touchKey)
+assert(MainActionBar.alpha == 0 and bindings.W == "MOVEFORWARD")
+assert(frames.ForeverTouchLeft.shown and frames.ForeverTouchLeftAction1.attributes.item == "item:501")
+combat = true
+modeKey(desktopKey)
+assert(MainActionBar.alpha == 0, "Protected frames must stay in place during combat")
+combat = false
+event(nil, "PLAYER_REGEN_ENABLED")
+assert(MainActionBar.alpha == .85 and DEFAULT_CHAT_FRAME.point[4] == 41)
+
+login(first, primary, nil, true)
+assert(MainActionBar.alpha == .85 and not frames.ForeverTouchLeft.shown and bindings.W == nil)
+modeKey(touchKey)
+assert(frames.ForeverTouchLeft.shown and bindings.W == "MOVEFORWARD")
+print("Input mode passed: desktop startup, hotplug, original layout and bindings, saved touch skills, and combat deferral.")

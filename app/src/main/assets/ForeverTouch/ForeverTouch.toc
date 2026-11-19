@@ -4,6 +4,7 @@
 ## Version: 2.7
 ## SavedVariables: ForeverTouchProfiles
 ## SavedVariablesPerCharacter: ForeverTouchPreferences
+ForeverTouchInputMode.lua
 ForeverTouchActions.lua
 ForeverTouchPicker.lua
 ForeverTouchMobileLayout.lua

@@ -48,6 +48,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
@@ -57,6 +58,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import app.gamenative.MainActivity
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
@@ -108,10 +110,12 @@ import app.gamenative.ui.data.PerformanceHudConfig
 import app.gamenative.ui.data.PerformanceHudSize
 import app.gamenative.ui.data.XServerState
 import app.gamenative.GameSessionService
+import app.gamenative.ui.screen.wow.HardwareInput
 import app.gamenative.ui.screen.wow.LoginObservation
 import app.gamenative.ui.screen.wow.MobileLaunchDiagnostics
 import app.gamenative.ui.screen.wow.WowMachineIdentity
 import app.gamenative.ui.screen.wow.auth.BattleNetBrowserLogin
+import app.gamenative.ui.screen.wow.updateMobileAddonInputMode
 import app.gamenative.ui.widget.PerformanceHudView
 import app.gamenative.utils.AssetUtils
 import app.gamenative.utils.ContainerUtils
@@ -196,6 +200,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -581,12 +586,38 @@ internal fun XServerScreen(
     var currentShooterConfig by remember(container.id) {
         mutableStateOf(ShooterModeConfig.fromJson(container.getShooterConfig()))
     }
+    var hasPhysicalKeyboard by remember { mutableStateOf(false) }
+    var hasPhysicalMouse by remember { mutableStateOf(false) }
+    val desktopInput by remember(mobileControls) {
+        derivedStateOf {
+            hasPhysicalKeyboard && hasPhysicalMouse && !mobileControls.chatting && mobileControls.hudEditor == null
+        }
+    }
     fun shouldShowMouseCursor(): Boolean {
         return !container.isDisableMouseInput &&
-            (!container.isTouchscreenMode || currentGestureConfig.showCursorInTouchscreenMode)
+            (desktopInput || !container.isTouchscreenMode || currentGestureConfig.showCursorInTouchscreenMode)
     }
     fun applyMouseCursorVisibility() {
         xServerView?.renderer?.setCursorVisible(shouldShowMouseCursor())
+    }
+    LaunchedEffect(container, mobileControls) {
+        val gameRoot = container.drivesIterator().firstOrNull { it[0].equals("G", ignoreCase = true) }
+            ?.let { File(it[1]) } ?: return@LaunchedEffect
+        snapshotFlow { xServerView?.let { desktopInput } }.collectLatest { desktop ->
+            if (desktop == null) return@collectLatest
+            applyMouseCursorVisibility()
+            withContext(Dispatchers.IO) {
+                try {
+                    updateMobileAddonInputMode(gameRoot, desktop)
+                } catch (error: IOException) {
+                    Timber.w(error, "Could not save the current Forever Touch input mode")
+                }
+            }
+            mobileControls.sendInputMode(desktop)
+            // The game can be between the character screen and a newly loaded add-on.
+            delay(750)
+            mobileControls.sendInputMode(desktop)
+        }
     }
     val clickHighlightPoints = remember { mutableStateListOf<app.gamenative.ui.component.HighlightPoint>() }
     var debugGestureName by remember { mutableStateOf("") }
@@ -603,8 +634,6 @@ internal fun XServerScreen(
     var hasPhysicalController by remember { mutableStateOf(false) }
     var controllerSlotStatusVersion by remember { mutableIntStateOf(0) }
     var keepPausedForEditor by remember { mutableStateOf(false) }
-    var hasPhysicalKeyboard by remember { mutableStateOf(false) }
-    var hasPhysicalMouse by remember { mutableStateOf(false) }
     var usingScreenMirror by remember { mutableStateOf(false) }
     var hasInternalTouchpad by remember { mutableStateOf(false) }
     var hasUpdatedScreenGamepad by remember { mutableStateOf(false) }
@@ -1025,19 +1054,9 @@ internal fun XServerScreen(
     }
 
     fun scanForExternalDevices() {
-        val deviceIds = InputDevice.getDeviceIds()
-        hasPhysicalKeyboard = deviceIds.any { id ->
-            val device = InputDevice.getDevice(id) ?: return@any false
-            val isExternal = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) device.isExternal else true
-            Keyboard.isKeyboardDevice(device) && !device.isVirtual && isExternal
-        }
-        hasPhysicalMouse = deviceIds.any { id ->
-            val device = InputDevice.getDevice(id) ?: return@any false
-            val isMouse = device.supportsSource(InputDevice.SOURCE_MOUSE) || device.supportsSource(InputDevice.SOURCE_MOUSE_RELATIVE) ||
-                          device.supportsSource(InputDevice.SOURCE_TOUCHPAD)
-            val isExternal = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) device.isExternal else true
-            isMouse && !device.isVirtual && isExternal
-        }
+        val hardware = HardwareInput.connected()
+        hasPhysicalKeyboard = hardware.keyboard
+        hasPhysicalMouse = hardware.mouse
         val controllerManager = ControllerManager.getInstance()
         controllerManager.autoAssignConnectedDevices()
         hasPhysicalController = controllerManager.getDetectedDevices().isNotEmpty()
@@ -1086,7 +1105,7 @@ internal fun XServerScreen(
         // Some devices advertise all its capabilities on onInputDeviceAdded callback
         // but some can also do basic advertise on onInputDeviceAdded and only expand on onInputDeviceChanged
         val isExternal = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) device.isExternal else true
-        if (!device.isVirtual && isExternal) {
+        if (!device.isVirtual && isExternal && device.isEnabled) {
             if (Keyboard.isKeyboardDevice(device)) {
                 hasPhysicalKeyboard = true
                 if (!showElementEditor && !keepPausedForEditor && !showQuickMenu && !isEditMode &&
@@ -1098,10 +1117,7 @@ internal fun XServerScreen(
                     areControlsVisible = false
                 }
             }
-            val isMouse = device.supportsSource(InputDevice.SOURCE_MOUSE) ||
-                    device.supportsSource(InputDevice.SOURCE_MOUSE_RELATIVE) ||
-                    device.supportsSource(InputDevice.SOURCE_TOUCHPAD)
-            if (isMouse) {
+            if (HardwareInput.isMouse(device)) {
                 hasPhysicalMouse = true
                 if (!hasUpdatedScreenGamepad && tryCapturePointer()) {
                     hasUpdatedScreenGamepad = true
@@ -1591,7 +1607,7 @@ internal fun XServerScreen(
                     keyboardEscMenuHandler.cancel()
                     gameBack()
                     handled = true
-                } else if (isPhysicalKeyboard && keyboardEscMenuHandler.isEsc(it.event) &&
+                } else if (!desktopInput && isPhysicalKeyboard && keyboardEscMenuHandler.isEsc(it.event) &&
                     !showElementEditor && !keepPausedForEditor && !showQuickMenu && !isEditMode) {
                     handled = keyboardEscMenuHandler.handleGameEsc(
                         event = it.event,
@@ -1868,7 +1884,7 @@ internal fun XServerScreen(
                     ?.dispatchTouchEvent(event) == true
                 if (overlayHandled) return@pointerInteropFilter true
 
-                if (!isPortrait && !areControlsVisible && !showQuickMenu && mobileControls.route(event)) {
+                if (!desktopInput && !isPortrait && !areControlsVisible && !showQuickMenu && mobileControls.route(event)) {
                     return@pointerInteropFilter true
                 }
                 if (isPortrait) {
@@ -2767,7 +2783,7 @@ internal fun XServerScreen(
         MobileGameOverlay(
             controls = mobileControls,
             receiver = imeInputReceiver,
-            visible = !showQuickMenu && !isEditMode && !showElementEditor,
+            visible = !desktopInput && !showQuickMenu && !isEditMode && !showElementEditor,
             canPlayWithTouch = !isPortrait && !areControlsVisible,
             fullscreen = fullscreen.takeUnless { windowed },
             onToggleFullscreen = {

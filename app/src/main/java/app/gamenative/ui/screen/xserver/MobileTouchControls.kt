@@ -131,19 +131,29 @@ internal class MobileTouchControls(private val touchSlop: Float) {
     }
 
     fun tap(key: XKeycode, modified: Boolean = false) {
+        val modifiers = if (modified) listOf(XKeycode.KEY_CTRL_L, XKeycode.KEY_SHIFT_L) else emptyList()
+        tap(key, modifiers)
+    }
+
+    fun sendInputMode(desktop: Boolean) {
         val game = server ?: return
-        if (modified) {
-            game.injectKeyPress(XKeycode.KEY_CTRL_L, 0, false)
-            game.injectKeyPress(XKeycode.KEY_SHIFT_L, 0, false)
+        val held = game.keyboard.pressedKeys
+        val modifiers = buildList {
+            if (XKeycode.KEY_CTRL_L.id !in held && XKeycode.KEY_CTRL_R.id !in held) add(XKeycode.KEY_CTRL_L)
+            if (XKeycode.KEY_ALT_L.id !in held && XKeycode.KEY_ALT_R.id !in held) add(XKeycode.KEY_ALT_L)
+            if (XKeycode.KEY_SHIFT_L.id !in held && XKeycode.KEY_SHIFT_R.id !in held) add(XKeycode.KEY_SHIFT_L)
         }
+        tap(if (desktop) XKeycode.KEY_F11 else XKeycode.KEY_F12, modifiers)
+    }
+
+    private fun tap(key: XKeycode, modifiers: List<XKeycode>) {
+        val game = server ?: return
         try {
+            for (modifier in modifiers) game.injectKeyPress(modifier, 0, false)
             game.injectKeyPress(key, 0, false)
             game.injectKeyRelease(key)
         } finally {
-            if (modified) {
-                game.injectKeyRelease(XKeycode.KEY_SHIFT_L)
-                game.injectKeyRelease(XKeycode.KEY_CTRL_L)
-            }
+            for (modifier in modifiers.asReversed()) game.injectKeyRelease(modifier)
         }
     }
 

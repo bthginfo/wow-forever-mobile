@@ -12,6 +12,8 @@ local HANDLE_HEIGHT = 35
 local german = addon.german
 local moveLabel = german and "Bogen verschieben" or "Move arc"
 local isSecret = issecretvalue or function() return false end
+local desktopInput = addon.desktopInput == true
+local requestedDesktopInput = desktopInput
 
 local events = CreateFrame("Frame")
 local editShield = CreateFrame("Frame", nil, UIParent)
@@ -433,9 +435,32 @@ local editorBindings = {
     ["CTRL-SHIFT-HOME"] = editorBinding("ResetEditor", resetEditor),
 }
 
+local nativeLayouts = {}
+
+local function rememberNativeLayout(frame)
+    if nativeLayouts[frame] then return end
+    local points = {}
+    for index = 1, frame:GetNumPoints() do points[index] = { frame:GetPoint(index) } end
+    nativeLayouts[frame] = {
+        points = points, width = frame:GetWidth(), height = frame:GetHeight(),
+        clipsChildren = frame.DoesClipChildren and frame:DoesClipChildren(),
+    }
+end
+
+local function restoreNativeLayouts()
+    for frame, original in pairs(nativeLayouts) do
+        frame:ClearAllPoints()
+        frame:SetSize(original.width, original.height)
+        for _, point in ipairs(original.points) do frame:SetPoint(unpack(point)) end
+        if original.clipsChildren ~= nil then frame:SetClipsChildren(original.clipsChildren) end
+    end
+    nativeLayouts = {}
+end
+
 local function dockChat(composing)
     local primary = DEFAULT_CHAT_FRAME
-    if not primary or (InCombatLockdown() and primary:IsProtected()) then return end
+    if desktopInput or not primary or (InCombatLockdown() and primary:IsProtected()) then return end
+    rememberNativeLayout(primary)
     local height = UIParent:GetHeight()
     primary:ClearAllPoints()
     if composing then
@@ -453,6 +478,10 @@ local desktopBarNames = {
 }
 local barAlpha, barMouse, barHooks = {}, {}, {}
 
+local function nativeEditMode()
+    return EditModeManagerFrame and EditModeManagerFrame:IsEditModeActive()
+end
+
 local function muteBarMouse(frame)
     if frame:IsForbidden() then return end
     local clicks, motion = frame:IsMouseClickEnabled(), frame:IsMouseMotionEnabled()
@@ -469,7 +498,7 @@ end
 
 local function updateDesktopBars()
     if InCombatLockdown() then return end
-    if EditModeManagerFrame and EditModeManagerFrame:IsEditModeActive() then
+    if desktopInput or nativeEditMode() then
         for bar, alpha in pairs(barAlpha) do
             barAlpha[bar] = nil
             bar:SetAlpha(alpha)
@@ -506,25 +535,30 @@ end
 
 local trackerHooked
 local function limitTrackerHeight(tracker)
-    if InCombatLockdown() and tracker:IsProtected() then return end
+    if desktopInput or nativeEditMode() or (InCombatLockdown() and tracker:IsProtected()) then return end
     local maximum = UIParent:GetHeight() * .137
     if maximum > 0 and tracker:GetHeight() > maximum then tracker:SetHeight(maximum) end
 end
 
 local function layoutHUD()
-    if InCombatLockdown() then return end
-    local height = UIParent:GetHeight()
+    if desktopInput or InCombatLockdown() then return end
     updateDesktopBars()
+    if nativeEditMode() then
+        restoreNativeLayouts()
+        return
+    end
+    local height = UIParent:GetHeight()
     dockChat(activeEditBox ~= nil)
 
     -- Leave room below quests for the right thumb arc even after WoW refreshes the tracker.
     local tracker = ObjectiveTrackerFrame
     if tracker and tracker.Update then
+        rememberNativeLayout(tracker)
         if not trackerHooked and tracker.UpdateHeight then
             hooksecurefunc(tracker, "UpdateHeight", limitTrackerHeight)
             trackerHooked = true
         end
-        if tracker.SetClipsChildren then tracker:SetClipsChildren(true) end
+        if tracker.DoesClipChildren then tracker:SetClipsChildren(true) end
         tracker:ClearAllPoints()
         tracker:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -height * .055, -height * .266)
         tracker:SetHeight(height * .137)
@@ -537,6 +571,16 @@ local chatControls = CreateFrame("Frame", nil, UIParent)
 chatControls:SetFrameStrata("DIALOG")
 chatControls:SetSize(1, 1)
 chatControls:Hide()
+
+local function restoreChatEditBox(editBox)
+    if not editBox or not editBox.foreverTouchOriginalPoints then return end
+    editBox:ClearAllPoints()
+    editBox:SetWidth(editBox.foreverTouchOriginalWidth)
+    for _, point in ipairs(editBox.foreverTouchOriginalPoints) do editBox:SetPoint(unpack(point)) end
+    editBox.foreverTouchOriginalPoints = nil
+    activeEditBox = nil
+    chatControls:Hide()
+end
 
 local function chatControl(text, x, y, width, action)
     local button = CreateFrame("Button", nil, chatControls, "UIPanelButtonTemplate")
@@ -590,12 +634,7 @@ chatButton:SetScript("OnClick", function()
         editBox.foreverTouchHooks = true
         editBox:HookScript("OnEditFocusLost", function(self)
             if not self.foreverTouchOriginalPoints then return end
-            self:ClearAllPoints()
-            self:SetWidth(self.foreverTouchOriginalWidth)
-            for _, point in ipairs(self.foreverTouchOriginalPoints) do self:SetPoint(unpack(point)) end
-            self.foreverTouchOriginalPoints = nil
-            activeEditBox = nil
-            chatControls:Hide()
+            restoreChatEditBox(self)
             dockChat(false)
         end)
     end
@@ -614,7 +653,7 @@ chatButton:SetScript("OnClick", function()
 end)
 
 refreshSlots = function()
-    if not preferences then return end
+    if desktopInput or not preferences then return end
     if InCombatLockdown() or draft then
         pendingRefresh = true
         return
@@ -650,14 +689,18 @@ refreshSlots = function()
 end
 
 local function refreshLiveButtons(updateIcon)
-    if not live then return end
+    if desktopInput or not live then return end
     for _, side in ipairs(SIDES) do
         for index = 1, #live[side] do Actions.refresh(groups[side].buttons[index], desktopRecords, updateIcon) end
     end
 end
 
+local modeBindings
 local function installBindings()
-    -- Temporary bindings for the Android toolbar. The player's own bindings stay in place.
+    ClearOverrideBindings(events)
+    for key, button in pairs(modeBindings) do SetOverrideBindingClick(events, true, key, button) end
+    if desktopInput then return end
+    -- Temporary bindings for the touch toolbar. The player's own bindings stay in place.
     SetOverrideBinding(events, true, "CTRL-SHIFT-F3", "TOGGLECHARACTER0")
     SetOverrideBinding(events, true, "CTRL-SHIFT-F4", "TOGGLETALENTS")
     SetOverrideBinding(events, true, "CTRL-SHIFT-F5", "TOGGLEQUESTLOG")
@@ -675,6 +718,34 @@ local function installBindings()
     SetOverrideBinding(events, false, "SPACE", "JUMP")
 end
 
+local function applyInputMode()
+    if InCombatLockdown() or desktopInput == requestedDesktopInput then return false end
+    desktopInput = requestedDesktopInput
+    installBindings()
+    if desktopInput then
+        finishEditing(false)
+        restoreChatEditBox(activeEditBox)
+        for _, side in ipairs(SIDES) do groups[side].panel:Hide() end
+        updateDesktopBars()
+        restoreNativeLayouts()
+    else
+        layoutHUD()
+        refreshSlots()
+    end
+    return true
+end
+
+modeBindings = {
+    ["ALT-CTRL-SHIFT-F11"] = editorBinding("DesktopInput", function()
+        requestedDesktopInput = true
+        applyInputMode()
+    end),
+    ["ALT-CTRL-SHIFT-F12"] = editorBinding("TouchInput", function()
+        requestedDesktopInput = false
+        applyInputMode()
+    end),
+}
+
 local function queueRefresh()
     if refreshQueued then return end
     refreshQueued = true
@@ -686,7 +757,7 @@ end
 
 for _, event in ipairs({
     "PLAYER_LOGIN", "PLAYER_ENTERING_WORLD", "ACTIONBAR_SLOT_CHANGED", "ACTIONBAR_PAGE_CHANGED",
-    "DISPLAY_SIZE_CHANGED", "UI_SCALE_CHANGED", "PLAYER_REGEN_ENABLED",
+    "DISPLAY_SIZE_CHANGED", "UI_SCALE_CHANGED", "PLAYER_REGEN_ENABLED", "PLAYER_LOGOUT",
     "ACTIONBAR_UPDATE_COOLDOWN", "ACTIONBAR_UPDATE_USABLE", "BAG_UPDATE_DELAYED",
     "SPELLS_CHANGED", "UPDATE_BONUS_ACTIONBAR", "UPDATE_OVERRIDE_ACTIONBAR",
     "SPELL_UPDATE_COOLDOWN", "SPELL_UPDATE_CHARGES", "SPELL_UPDATE_USABLE", "BAG_UPDATE_COOLDOWN",
@@ -709,9 +780,14 @@ events:SetScript("OnEvent", function(_, event)
             refreshSlots()
         end)
     elseif event == "PLAYER_REGEN_ENABLED" then
+        if applyInputMode() then return end
         installBindings()
         layoutHUD()
-        if pendingRefresh then queueRefresh() end
+        if not desktopInput and pendingRefresh then queueRefresh() end
+    elseif event == "PLAYER_LOGOUT" then
+        if not InCombatLockdown() then restoreNativeLayouts() end
+    elseif desktopInput then
+        return
     elseif event == "DISPLAY_SIZE_CHANGED" or event == "UI_SCALE_CHANGED" then
         layoutHUD()
     elseif event == "ACTIONBAR_UPDATE_COOLDOWN" or event == "ACTIONBAR_UPDATE_USABLE" or event == "BAG_UPDATE_DELAYED"
@@ -727,6 +803,6 @@ events:SetScript("OnEvent", function(_, event)
 end)
 
 if EventRegistry then
-    EventRegistry:RegisterCallback("EditMode.Enter", function() C_Timer.After(0, updateDesktopBars) end, events)
+    EventRegistry:RegisterCallback("EditMode.Enter", function() C_Timer.After(0, layoutHUD) end, events)
     EventRegistry:RegisterCallback("EditMode.Exit", function() C_Timer.After(0, layoutHUD) end, events)
 end

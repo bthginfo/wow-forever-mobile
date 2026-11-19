@@ -73,6 +73,10 @@ The touch overlay translates Android gestures into keyboard and mouse input for 
 
 Starting with .16, saving skill changes outside combat briefly reloads the WoW interface to write the layout to disk. If you save during combat, log out through WoW or use `/reload` afterward to write it to disk.
 
+### Keyboard and mouse
+
+Connect both a physical keyboard and a mouse or trackpad over USB or Bluetooth. The app switches to WoW's desktop action bars, chat, quest tracker, and key bindings. Disconnect either accessory to return to the touch HUD with your saved skill arcs. If you start with desktop input and later disconnect an accessory, use **Play controls** to activate the touch stick if it is still in login mode. WoW applies changes to protected action bars after combat.
+
 ### Tablets and fullscreen
 
 The app selects the tablet layout when both dimensions of the app window are at least 600 dp. Movement, Target and Interact sit at the bottom left. Camera and Jump sit at the bottom right. A smaller split-screen window uses the compact phone layout. Use **Edit controls** to adjust positions or **Default** to try the tablet defaults.
