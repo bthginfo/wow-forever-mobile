@@ -427,6 +427,7 @@ internal fun XServerScreen(
     val context = LocalContext.current
     val view = LocalView.current
     val scope = rememberCoroutineScope()
+    val captureExternalMouse = remember { PrefManager.getBoolean("capture_pointer_on_external_mouse", true) }
     val mobileControls = remember(appId) { MobileTouchControls.create(ViewConfiguration.get(context)) }
     DisposableEffect(lifecycleOwner, mobileControls) {
         val observer = LifecycleEventObserver { _, event ->
@@ -599,25 +600,6 @@ internal fun XServerScreen(
     }
     fun applyMouseCursorVisibility() {
         xServerView?.renderer?.setCursorVisible(shouldShowMouseCursor())
-    }
-    LaunchedEffect(container, mobileControls) {
-        val gameRoot = container.drivesIterator().firstOrNull { it[0].equals("G", ignoreCase = true) }
-            ?.let { File(it[1]) } ?: return@LaunchedEffect
-        snapshotFlow { xServerView?.let { desktopInput } }.collectLatest { desktop ->
-            if (desktop == null) return@collectLatest
-            applyMouseCursorVisibility()
-            withContext(Dispatchers.IO) {
-                try {
-                    updateMobileAddonInputMode(gameRoot, desktop)
-                } catch (error: IOException) {
-                    Timber.w(error, "Could not save the current Forever Touch input mode")
-                }
-            }
-            mobileControls.sendInputMode(desktop)
-            // The game can be between the character screen and a newly loaded add-on.
-            delay(750)
-            mobileControls.sendInputMode(desktop)
-        }
     }
     val clickHighlightPoints = remember { mutableStateListOf<app.gamenative.ui.component.HighlightPoint>() }
     var debugGestureName by remember { mutableStateOf("") }
@@ -1037,12 +1019,14 @@ internal fun XServerScreen(
         }
     }
 
+    fun canCapturePointer(): Boolean = captureExternalMouse && !showElementEditor && !keepPausedForEditor &&
+        !showQuickMenu && !isEditMode && (desktopInput || !container.isTouchscreenMode)
+
     val tryCapturePointer: () -> Boolean = {
-        if (!showElementEditor && !keepPausedForEditor && !showQuickMenu && !isEditMode &&
-            !container.isTouchscreenMode) {
+        if (canCapturePointer()) {
             PluviaApp.touchpadView?.postDelayed({
                 val view = PluviaApp.touchpadView
-                if (view != null) {
+                if (view != null && !view.hasPointerCapture() && canCapturePointer()) {
                     view.requestFocus()
                     view.requestPointerCapture()
                 }
@@ -1050,6 +1034,31 @@ internal fun XServerScreen(
             true
         } else {
             false
+        }
+    }
+
+    LaunchedEffect(container, mobileControls) {
+        val gameRoot = container.drivesIterator().firstOrNull { it[0].equals("G", ignoreCase = true) }
+            ?.let { File(it[1]) } ?: return@LaunchedEffect
+        snapshotFlow { xServerView?.let { desktopInput } }.collectLatest { desktop ->
+            if (desktop == null) return@collectLatest
+            applyMouseCursorVisibility()
+            if (desktop) {
+                tryCapturePointer()
+            } else if (container.isTouchscreenMode) {
+                PluviaApp.touchpadView?.releasePointerCapture()
+            }
+            withContext(Dispatchers.IO) {
+                try {
+                    updateMobileAddonInputMode(gameRoot, desktop)
+                } catch (error: IOException) {
+                    Timber.w(error, "Could not save the current Forever Touch input mode")
+                }
+            }
+            mobileControls.sendInputMode(desktop)
+            // The game can be between the character screen and a newly loaded add-on.
+            delay(750)
+            mobileControls.sendInputMode(desktop)
         }
     }
 
@@ -1669,6 +1678,11 @@ internal fun XServerScreen(
             }
             val event = it.event
             val device = event?.device
+            val touchpad = PluviaApp.touchpadView
+            if (desktopInput && event != null && touchpad?.hasPointerCapture() == false &&
+                !PluviaApp.isOverlayPaused && !showQuickMenu && !showElementEditor && !isEditMode) {
+                handled = touchpad.onExternalMouseEvent(event) || handled
+            }
             if (!usingScreenMirror && device?.name == "scrcpy") {
                 usingScreenMirror = true
             }
@@ -1887,6 +1901,9 @@ internal fun XServerScreen(
                 if (!desktopInput && !isPortrait && !areControlsVisible && !showQuickMenu && mobileControls.route(event)) {
                     return@pointerInteropFilter true
                 }
+                if (desktopInput && event.isFromSource(InputDevice.SOURCE_MOUSE)) {
+                    return@pointerInteropFilter true
+                }
                 if (isPortrait) {
                     gameRoot?.dispatchTouchEvent(event)
                 } else {
@@ -1972,7 +1989,7 @@ internal fun XServerScreen(
                     }
                 }
                 getxServer().renderer = renderer
-                PluviaApp.touchpadView = TouchpadView(context, getxServer(), PrefManager.getBoolean("capture_pointer_on_external_mouse", true))
+                PluviaApp.touchpadView = TouchpadView(context, getxServer(), captureExternalMouse)
                     .also { mobileControls.attach(getxServer(), it) }
                 PluviaApp.touchpadView?.setMoveCursorToTouchpoint(PrefManager.getBoolean("move_cursor_to_touchpoint", false))
 

@@ -2317,6 +2317,14 @@ public class TouchpadView extends View implements View.OnCapturedPointerListener
         if (event.isFromSource(InputDevice.SOURCE_MOUSE)) {
             int actionButton = event.getActionButton();
             switch (event.getAction()) {
+                case MotionEvent.ACTION_HOVER_MOVE:
+                    int[] location = new int[2];
+                    getLocationOnScreen(location);
+                    float[] point = XForm.transformPoint(xform,
+                            event.getRawX() - location[0], event.getRawY() - location[1]);
+                    xServer.injectPointerMove((int) point[0], (int) point[1]);
+                    handled = true;
+                    break;
                 case MotionEvent.ACTION_BUTTON_PRESS:
                     if (actionButton == MotionEvent.BUTTON_PRIMARY) {
                         if (xServer.isRelativeMouseMovement())
