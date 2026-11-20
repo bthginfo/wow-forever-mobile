@@ -646,9 +646,11 @@
     <string name="mobile_arrange_skills">Skills bearbeiten</string>
     <string name="mobile_edit_layout">Bedienelemente verschieben</string>
     <string name="mobile_edit_layout_hint">Zieh die Bedienelemente oder die Menüleiste an ihren Platz.</string>
-    <string name="mobile_edit_skills_hint">Wähle einen Slot zum Belegen. Zieh Slots zum Tauschen oder verschiebe die Bögen am Griff.</string>
+    <string name="mobile_edit_skills_hint">Wähle einen Slot zum Belegen. Änderungen werden automatisch gespeichert.</string>
     <string name="mobile_layout_default">Standard</string>
     <string name="mobile_layout_save">Speichern</string>
+    <string name="mobile_layout_done">Fertig</string>
+    <string name="mobile_layout_discard">Verwerfen</string>
     <string name="mobile_target">Ziel</string>
     <string name="mobile_interact">Interagieren</string>
     <string name="mobile_open_authenticator">Authenticator</string>

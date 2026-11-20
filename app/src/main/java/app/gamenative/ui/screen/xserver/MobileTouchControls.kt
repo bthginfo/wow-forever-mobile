@@ -101,7 +101,7 @@ internal class MobileTouchControls(private val touchSlop: Float) {
         if (hudEditor == MobileHudEditor.Skills) tap(XKeycode.KEY_HOME, modified = true)
     }
 
-    fun closeHudEditor(save: Boolean = false) {
+    fun closeHudEditor(save: Boolean = true) {
         val editor = hudEditor ?: return
         releaseAll()
         if (editor == MobileHudEditor.Skills) {

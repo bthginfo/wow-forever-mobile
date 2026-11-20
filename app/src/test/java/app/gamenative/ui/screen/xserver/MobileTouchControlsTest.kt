@@ -32,6 +32,30 @@ import org.robolectric.annotation.Config
 @Config(application = Application::class, sdk = [34])
 class MobileTouchControlsTest {
     @Test
+    fun closingTheSkillEditorKeepsChangesUnlessDiscarded() {
+        val game = mockk<XServer>(relaxed = true)
+        val pad = mockk<TouchpadView>(relaxed = true)
+        val controls = MobileTouchControls(8f)
+        controls.attach(game, pad)
+        controls.togglePlaying()
+
+        controls.openHudEditor(MobileHudEditor.Skills)
+        controls.closeHudEditor()
+        assertNull(controls.hudEditor)
+
+        controls.openHudEditor(MobileHudEditor.Skills)
+        controls.closeHudEditor(save = false)
+        assertNull(controls.hudEditor)
+
+        verifyOrder {
+            game.injectKeyPress(XKeycode.KEY_F7, 0, false)
+            game.injectKeyPress(XKeycode.KEY_F1, 0, false)
+            game.injectKeyPress(XKeycode.KEY_F7, 0, false)
+            game.injectKeyPress(XKeycode.KEY_F2, 0, false)
+        }
+    }
+
+    @Test
     fun tapIsStillASingleFingerWhileTheStickAndCameraAreHeld() {
         checkSinglePointer(MotionEvent.ACTION_POINTER_DOWN, MotionEvent.ACTION_DOWN)
         checkSinglePointer(MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_UP)

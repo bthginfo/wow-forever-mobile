@@ -130,7 +130,7 @@ internal fun BoxScope.MobileGameOverlay(
         controls.closeHudEditor(save)
     }
 
-    BackHandler(enabled = editor != null) { finishEditor(save = false) }
+    BackHandler(enabled = editor != null) { finishEditor(save = !editingControls) }
 
     fun finishChat(send: Boolean) {
         controls.closeChat(send)
@@ -428,8 +428,9 @@ private fun BoxScope.MobileHudEditorBar(
             )
             Row(modifier = Modifier.horizontalScroll(rememberScrollState())) {
                 ToolbarText(R.string.mobile_layout_default, onClick = onReset)
-                ToolbarText(android.R.string.cancel, onClick = onCancel)
-                ToolbarText(R.string.mobile_layout_save, accent = true, onClick = onSave)
+                val skills = editor == MobileHudEditor.Skills
+                ToolbarText(if (skills) R.string.mobile_layout_discard else android.R.string.cancel, onClick = onCancel)
+                ToolbarText(if (skills) R.string.mobile_layout_done else R.string.mobile_layout_save, accent = true, onClick = onSave)
             }
         }
     }

@@ -34,7 +34,7 @@ for _, side in ipairs(SIDES) do
     groups[side] = { side = side, editor = editor, previews = {} }
 end
 
-local livePages, defaults, desktopRecords, preferences
+local livePages, defaults, desktopKeys, desktopRecords, preferences
 local profileKey, alternateProfileKey, confirmSaved
 local actionPages = {}
 local draft, selected, dragFrom, moving
@@ -275,12 +275,63 @@ local function layoutActions()
     end
 end
 
+local function copyPositions(source)
+    local result = {}
+    if type(source) ~= "table" then return result end
+    for _, side in ipairs(SIDES) do
+        local p = source[side]
+        if normalizedPosition(p) then result[side] = { x = p.x, y = p.y } end
+    end
+    return result
+end
+
+local function savedPages()
+    local first = defaults
+    if type(preferences.mobileSlots) == "table" then
+        first = preferences.mobileSlots
+    elseif preferences.order or preferences.favorites then
+        first = Actions.splitDesktop(desktopKeys, desktopRecords, preferences.order or preferences.favorites)
+    end
+    local pages = { { slots = Actions.copyProfile(first), positions = copyPositions(preferences.mobileArcPositions) } }
+    if type(preferences.mobileArcPages) == "table" then
+        for _, page in ipairs(preferences.mobileArcPages) do
+            if type(page) == "table" then
+                pages[#pages + 1] = { slots = Actions.copyProfile(page.slots), positions = copyPositions(page.positions) }
+            end
+        end
+    end
+    return pages
+end
+
+local function checkpointDraft()
+    local first = draft.pages[1]
+    preferences.mobileArcPositions = copyPositions(first.positions)
+    if first.reset then
+        preferences.mobileSlots, preferences.order, preferences.favorites = nil, nil, nil
+    end
+    if first.changed then
+        preferences.mobileSlots = Actions.independentProfile(first.slots, desktopRecords)
+    end
+    local more = {}
+    for index = 2, #draft.pages do
+        local page = draft.pages[index]
+        more[#more + 1] = { slots = Actions.independentProfile(page.slots, desktopRecords), positions = copyPositions(page.positions) }
+    end
+    preferences.mobileArcPages = #more > 0 and more or nil
+    preferences.mobileArcPage = draft.index > 1 and draft.index or nil
+    preferences.revision = preferenceRevision(preferences) + 1
+    preferences.confirmArcSave = true
+    checkpointPreferences()
+    draft.edited, pendingSave = true, true
+end
+
 local function swapSlots(first, second)
     local page = draft.pages[draft.index]
     local from, to = page.slots[first.mobileSide], page.slots[second.mobileSide]
     local a, b = first.mobileIndex, second.mobileIndex
     from[a], to[b] = to[b], from[a]
     page.changed = true
+    checkpointDraft()
 end
 
 local function previewButton(group, index)
@@ -333,8 +384,11 @@ local function chooseBinding(side, index)
     local old = list[index]
     picker:Open(function(binding)
         if not draft or draft.pages[draft.index] ~= page then return end
-        list[index] = binding
-        page.changed = true
+        if not old or old.kind ~= binding.kind or old.id ~= binding.id then
+            list[index] = binding
+            page.changed = true
+            checkpointDraft()
+        end
         selected = nil
         updateEditor()
     end, old and (old.kind == "item" and "item" or "spell"))
@@ -364,6 +418,7 @@ remove:SetScript("OnClick", function()
     local page = draft.pages[draft.index]
     table.remove(page.slots[selected.mobileSide], selected.mobileIndex)
     page.changed = true
+    checkpointDraft()
     selected = nil
     updateEditor()
 end)
@@ -401,7 +456,7 @@ for _, side in ipairs(SIDES) do
                 x = normalizedCoordinate(left - (UIParent:GetLeft() or 0) / scale, travelX),
                 y = normalizedCoordinate(bottom - (UIParent:GetBottom() or 0) / scale, travelY),
             }
-            page.moved = true
+            checkpointDraft()
         end
         layoutActions()
     end)
@@ -451,16 +506,6 @@ updateEditor = function()
     layoutActions()
 end
 
-local function copyPositions(source)
-    local result = {}
-    if type(source) ~= "table" then return result end
-    for _, side in ipairs(SIDES) do
-        local p = source[side]
-        if normalizedPosition(p) then result[side] = { x = p.x, y = p.y } end
-    end
-    return result
-end
-
 local function stopMoving()
     if not moving then return end
     moving.editor:StopMovingOrSizing()
@@ -494,13 +539,13 @@ addSet = setControl("AddSet", german and "Neues Set" or "Add set", "BOTTOMLEFT",
     local current = draft.pages[draft.index]
     draft.pages[#draft.pages + 1] = { slots = Actions.copyProfile(), positions = copyPositions(current.positions) }
     draft.index = #draft.pages
-    draft.structureChanged = true
+    checkpointDraft()
 end)
 removeSet = setControl("RemoveSet", german and "Set löschen" or "Remove set", "BOTTOMRIGHT", -4, 0, 129, function()
     if draft.index == 1 then return end
     table.remove(draft.pages, draft.index)
     draft.index = math.min(draft.index, #draft.pages)
-    draft.structureChanged = true
+    checkpointDraft()
 end)
 
 local function setActionAlpha(alpha)
@@ -510,10 +555,13 @@ end
 
 local function openEditor()
     if draft or not livePages then return end
-    draft = { pages = {}, index = switcher:GetAttribute("page") }
-    for index, page in ipairs(livePages) do
-        draft.pages[index] = { slots = Actions.copyProfile(page.slots), positions = copyPositions(page.positions) }
-    end
+    local pages = savedPages()
+    draft = {
+        pages = pages,
+        index = pageIndex(preferences.mobileArcPage, #pages),
+        original = CopyTable(preferences),
+        originalPendingSave = pendingSave,
+    }
     setActionAlpha(0)
     updateEditor()
     editShield:Show()
@@ -528,53 +576,29 @@ local function resetEditor()
         positions = {},
         reset = true,
     }
+    checkpointDraft()
     selected, dragFrom = nil, nil
     updateEditor()
 end
 
-local function finishEditing(save)
+local function finishEditing(keepChanges)
     if not draft then return end
     stopMoving()
-    local changed, selectedSetChanged = false, false
-    if save then
+    if keepChanges then
         local selectedSet = draft.index > 1 and draft.index or nil
-        selectedSetChanged = selectedSet ~= preferences.mobileArcPage
-        preferences.mobileArcPage = selectedSet
-        changed = draft.structureChanged
-        for _, page in ipairs(draft.pages) do
-            changed = changed or page.changed or page.reset or page.moved
-        end
-    end
-    if changed then
-        local first = draft.pages[1]
-        preferences.mobileArcPositions = first.positions
-        if first.reset then
-            preferences.mobileSlots, preferences.order, preferences.favorites = nil, nil, nil
-        end
-        if first.changed then
-            preferences.mobileSlots = Actions.independentProfile(first.slots, desktopRecords)
-        end
-        local more = {}
-        for index = 2, #draft.pages do
-            local page = draft.pages[index]
-            more[#more + 1] = { slots = Actions.independentProfile(page.slots, desktopRecords), positions = page.positions }
-        end
-        preferences.mobileArcPages = #more > 0 and more or nil
-    end
-    if changed or selectedSetChanged then
-        preferences.revision = preferenceRevision(preferences) + 1
-        preferences.confirmArcSave = true
+        if selectedSet ~= preferences.mobileArcPage then checkpointDraft() end
+    elseif draft.edited then
+        preferences, pendingSave = draft.original, draft.originalPendingSave
         checkpointPreferences()
-        pendingSave = true
-        if InCombatLockdown() then
-            saveFeedback(german and "Arc-Belegung wird nach dem Kampf gespeichert." or "Arc layout will save after combat.")
-        end
     end
     picker:Hide()
     draft, selected, dragFrom = nil, nil, nil
     editShield:Hide()
     setActionAlpha(1)
-    -- Schedule the save independently of rendering the updated buttons.
+    if pendingSave and InCombatLockdown() then
+        saveFeedback(german and "Arc-Belegung wird nach dem Kampf gespeichert." or "Arc layout will save after combat.")
+    end
+    -- Completed edits are already checkpointed. Reload once when the editor closes.
     flushSave()
     refreshSlots()
 end
@@ -799,23 +823,9 @@ refreshSlots = function()
     end
     pendingRefresh = false
 
-    local keys
-    keys, desktopRecords = Actions.desktop()
-    defaults = Actions.splitDesktop(keys, desktopRecords)
-    local first = defaults
-    if type(preferences.mobileSlots) == "table" then
-        first = Actions.copyProfile(preferences.mobileSlots)
-    elseif preferences.order or preferences.favorites then
-        first = Actions.splitDesktop(keys, desktopRecords, preferences.order or preferences.favorites)
-    end
-    livePages = { { slots = first, positions = preferences.mobileArcPositions } }
-    if type(preferences.mobileArcPages) == "table" then
-        for _, page in ipairs(preferences.mobileArcPages) do
-            if type(page) == "table" then
-                livePages[#livePages + 1] = { slots = Actions.copyProfile(page.slots), positions = page.positions }
-            end
-        end
-    end
+    desktopKeys, desktopRecords = Actions.desktop()
+    defaults = Actions.splitDesktop(desktopKeys, desktopRecords)
+    livePages = savedPages()
     local activeIndex = pageIndex(preferences.mobileArcPage, #livePages)
 
     for index, page in ipairs(livePages) do

@@ -710,9 +710,11 @@
     <string name="mobile_arrange_skills">Edit skills</string>
     <string name="mobile_edit_layout">Edit controls</string>
     <string name="mobile_edit_layout_hint">Drag a control or the menu bar to move it.</string>
-    <string name="mobile_edit_skills_hint">Select a slot to assign it. Drag slots to swap them or drag an arc by its handle.</string>
+    <string name="mobile_edit_skills_hint">Select a slot to assign it. Changes save automatically.</string>
     <string name="mobile_layout_default">Default</string>
     <string name="mobile_layout_save">Save</string>
+    <string name="mobile_layout_done">Done</string>
+    <string name="mobile_layout_discard">Discard</string>
     <string name="mobile_target">Target</string>
     <string name="mobile_interact">Interact</string>
     <string name="mobile_open_authenticator">Authenticator</string>

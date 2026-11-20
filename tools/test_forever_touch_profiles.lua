@@ -207,6 +207,83 @@ end
 
 local first, second = "Player-1-123", "Player-2-123"
 local legacy = { mobileSlots = { left = {}, right = {{ kind = "spell", id = 201 }} } }
+
+local function preview(side, index)
+    for _, frame in ipairs(frames) do
+        if rawget(frame, "mobileSide") == side and rawget(frame, "mobileIndex") == index and frame:IsShown() then
+            return frame
+        end
+    end
+    error("Missing preview slot: " .. side .. " " .. index)
+end
+
+local function replaceRight(binding)
+    local slot = preview("right", 1)
+    slot.scripts.OnClick(slot)
+    local assign = control("Assign")
+    assign.scripts.OnClick(assign)
+    choose(binding)
+end
+
+login(first, legacy)
+click("OpenEditor")
+replaceRight({ kind = "item", id = 502 })
+assert(ForeverTouchPreferences.mobileSlots.right[1].kind == "item")
+assert(ForeverTouchProfiles[first].mobileSlots.right[1].id == 502 and reloads == 0,
+    "replacing a spell checkpoints the item even with the editor open")
+replaceRight({ kind = "spell", id = 202 })
+assert(ForeverTouchPreferences.mobileSlots.right[1].id == 202 and reloads == 0,
+    "multiple replacements autosave without reloading while editing")
+addItem(503)
+local left, right = preview("left", 1), preview("right", 1)
+left.IsMouseOver = function() return true end
+right.scripts.OnDragStart(right)
+right.scripts.OnDragStop(right)
+assert(ForeverTouchPreferences.mobileSlots.left[1].id == 202 and ForeverTouchPreferences.mobileSlots.right[1].id == 503,
+    "dragging one slot onto another checkpoints both slots")
+right.scripts.OnClick(right)
+local remove = control("Remove")
+remove.scripts.OnClick(remove)
+assert(#ForeverTouchPreferences.mobileSlots.right == 0 and reloads == 0)
+click("SaveEditor")
+click("SaveEditor")
+assert(reloads == 1 and disk.character.mobileSlots.left[1].id == 202 and #disk.character.mobileSlots.right == 0,
+    "closing the editor flushes all autosaved changes once")
+
+login(first, legacy)
+click("OpenEditor")
+replaceRight({ kind = "item", id = 502 })
+click("CancelEditor")
+assert(reloads == 0 and ForeverTouchPreferences.mobileSlots.right[1].id == 201
+    and ForeverTouchProfiles[first].mobileSlots.right[1].id == 201, "explicit discard restores the opening snapshot")
+
+login(first, legacy)
+click("OpenEditor")
+replaceRight({ kind = "item", id = 502 })
+event(nil, "PLAYER_LOGOUT")
+local logoutProfile = copy(ForeverTouchPreferences)
+local logoutAccount = copy(ForeverTouchProfiles)
+login(first, logoutProfile, logoutAccount)
+assert(frames.ForeverTouchRightAction1.attributes.item == "item:502", "logout preserves edits from an open editor")
+click("OpenEditor")
+replaceRight({ kind = "item", id = 502 })
+click("SaveEditor")
+assert(reloads == 0, "matching assignments leave the profile alone")
+
+login(first, legacy)
+combat = true
+click("OpenEditor")
+replaceRight({ kind = "item", id = 502 })
+click("SaveEditor")
+click("OpenEditor")
+addItem(503)
+click("SaveEditor")
+assert(reloads == 0 and ForeverTouchPreferences.mobileSlots.right[1].id == 502,
+    "reopening during combat uses the autosaved profile while live buttons still show the old slots")
+combat = false
+event(nil, "PLAYER_REGEN_ENABLED")
+assert(reloads == 1 and disk.character.mobileSlots.left[1].id == 503 and disk.character.mobileSlots.right[1].id == 502)
+
 login(first, legacy)
 assert(frames.ForeverTouchRightAction1.attributes.spell == 201, "legacy slots must load")
 click("OpenEditor")
@@ -458,4 +535,4 @@ local point, relative, relativePoint, x, y = chat:GetPoint()
 assert(point == "TOPRIGHT" and relative == UIParent and relativePoint == "TOPRIGHT" and x == -45 and y == -110)
 assert(chat:GetWidth() == 390 and chat:GetHeight() == 142 and entry:GetPoint() == "TOP")
 
-print("Forever Touch passed: profile persistence, arc sets, secure switching, cooldowns, professions and chat placement.")
+print("Forever Touch passed: arc autosave, profile persistence, secure switching, cooldowns, professions and chat placement.")
