@@ -15,9 +15,24 @@ local getAction = GetActionInfo or actionBar.GetActionInfo
 local getTexture = GetActionTexture or actionBar.GetActionTexture
 local getPage = GetActionBarPage or actionBar.GetActionBarPage
 local getCount = GetActionCount or actionBar.GetActionCount
-local getCooldown = GetActionCooldown or actionBar.GetActionCooldown
 local isUsable = IsUsableAction or actionBar.IsUsableAction
 local fallbackIcon = 134400
+
+local cooldowns = {
+    action = {
+        info = actionBar.GetActionCooldown or GetActionCooldown,
+        duration = actionBar.GetActionCooldownDuration,
+        charges = actionBar.GetActionCharges,
+        recharge = actionBar.GetActionChargeDuration,
+    },
+    spell = {
+        info = spell.GetSpellCooldown or GetSpellCooldown,
+        duration = spell.GetSpellCooldownDuration,
+        charges = spell.GetSpellCharges,
+        recharge = spell.GetSpellChargeDuration,
+    },
+    item = { info = item.GetItemCooldown or GetItemCooldown },
+}
 
 Actions.sides = { "left", "right" }
 Actions.limit = LIMIT
@@ -143,12 +158,42 @@ function Actions.bind(button, binding, records)
     button:SetAttribute("item", itemName)
 end
 
-local function setCooldown(frame, start, duration, rate)
-    if not isSecret(start) and type(start) == "table" then
-        start, duration, rate = start.startTime, start.duration, start.modRate
-    end
+local function setNumericCooldown(frame, start, duration, rate)
+    if isSecret(start) or isSecret(duration) or isSecret(rate)
+            or number(start) <= 0 or number(duration) <= 0 then return false end
     local speed = number(rate)
-    frame:SetCooldown(number(start), number(duration), speed > 0 and speed or 1)
+    frame:SetCooldown(start, duration, speed > 0 and speed or 1)
+    return true
+end
+
+local function setDurationCooldown(frame, getDuration, id)
+    if not getDuration or not frame.SetCooldownFromDurationObject then return false end
+    local duration = getDuration(id)
+    if isSecret(duration) or not duration then return false end
+    -- WoW can render the opaque timer even when Lua cannot read the underlying seconds.
+    frame:SetCooldownFromDurationObject(duration, true)
+    return true
+end
+
+local function refreshCooldown(frame, source, id, charges)
+    if charges and not isSecret(charges.isActive) and charges.isActive ~= false then
+        if charges.isActive and setDurationCooldown(frame, source.recharge, id) then return end
+        if setNumericCooldown(frame, charges.cooldownStartTime, charges.cooldownDuration, charges.chargeModRate) then return end
+    end
+    if source then
+        if setDurationCooldown(frame, source.duration, id) then return end
+        if source.info then
+            local start, duration, enabled, rate = source.info(id)
+            if not isSecret(start) and type(start) == "table" then
+                enabled = start.isActive
+                if not isSecret(enabled) and enabled == nil then enabled = start.isEnabled end
+                start, duration, rate = start.startTime, start.duration, start.modRate
+            end
+            if not isSecret(enabled) and enabled ~= false and enabled ~= 0
+                    and setNumericCooldown(frame, start, duration, rate) then return end
+        end
+    end
+    frame:Clear()
 end
 
 function Actions.refresh(button, records, updateIcon)
@@ -156,24 +201,18 @@ function Actions.refresh(button, records, updateIcon)
     if not binding then return end
     if updateIcon then button.icon:SetTexture(Actions.texture(binding, records)) end
 
-    local start, duration, rate, count, usable, noPower
+    local count, usable, noPower
     local slot = button:GetAttribute("action")
+    local id = slot or binding.id
+    local source = cooldowns[slot and "action" or binding.kind]
+    local charges = source and source.charges and source.charges(id)
+    if isSecret(charges) or type(charges) ~= "table" then charges = nil end
     if slot then
         if getCount then count = getCount(slot) end
-        if getCooldown then
-            local enabled
-            start, duration, enabled, rate = getCooldown(slot)
-        end
         if isUsable then usable, noPower = isUsable(slot) end
     elseif binding.kind == "spell" then
-        if spell.GetSpellCooldown then start = spell.GetSpellCooldown(binding.id) end
         if spell.IsSpellUsable then usable, noPower = spell.IsSpellUsable(binding.id) end
-        if spell.GetSpellCharges then
-            local charges = spell.GetSpellCharges(binding.id)
-            if not isSecret(charges) and type(charges) == "table" then count = charges.currentCharges end
-        end
     elseif binding.kind == "item" then
-        if item.GetItemCooldown then start, duration = item.GetItemCooldown(binding.id) end
         if item.GetItemCount then count = item.GetItemCount(binding.id) end
         if item.IsUsableItem then usable = item.IsUsableItem(binding.id) end
     else
@@ -181,8 +220,12 @@ function Actions.refresh(button, records, updateIcon)
     end
 
     count = number(count)
-    button.count:SetText(count > 1 and count or "")
-    setCooldown(button.cooldown, start, duration, rate)
+    if charges and number(charges.maxCharges) > 1 and not isSecret(charges.currentCharges) then
+        button.count:SetText(charges.currentCharges)
+    else
+        button.count:SetText(count > 1 and count or "")
+    end
+    refreshCooldown(button.cooldown, source, id, charges)
     if not isSecret(usable) and not isSecret(noPower) then
         local intensity = usable == false and .42 or 1
         if noPower then

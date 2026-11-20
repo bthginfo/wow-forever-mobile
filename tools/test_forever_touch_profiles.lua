@@ -35,6 +35,18 @@ local methods = {
     SetFrameRef = function(self, name, frame) guarded(self); self.refs[name] = frame end,
     GetFrameRef = function(self, name) return self.refs[name] end,
     SetText = function(self, value) self.text = value end,
+    SetDrawSwipe = function(self, enabled) self.drawSwipe = enabled end,
+    SetHideCountdownNumbers = function(self, hidden) self.hideNumbers = hidden end,
+    SetMinimumCountdownDuration = function(self, milliseconds) self.minimumCountdown = milliseconds end,
+    SetCooldown = function(self, start, duration, rate)
+        assert(not issecretvalue(start) and not issecretvalue(duration) and not issecretvalue(rate))
+        self.timer = { start = start, duration = duration, rate = rate }
+    end,
+    SetCooldownFromDurationObject = function(self, timer, clearIfZero)
+        assert(not issecretvalue(timer) and clearIfZero)
+        self.timer = timer
+    end,
+    Clear = function(self) self.timer = nil end,
     GetName = function(self) return self.name end,
     GetWidth = function(self) return self.width end,
     GetHeight = function(self) return self.height end,
@@ -88,7 +100,26 @@ C_UI = {
         disk = { character = copy(ForeverTouchPreferences), account = copy(ForeverTouchProfiles) }
     end,
 }
-C_Spell = { GetSpellName = tostring }
+local secret = setmetatable({}, { __index = function() error("A restricted value must not be indexed") end })
+function issecretvalue(value) return rawequal(value, secret) end
+
+local actionTimers, spellTimers, spellInfo, chargeTimers, chargeInfo, itemTimers = {}, {}, {}, {}, {}, {}
+C_ActionBar = {
+    GetActionCooldownDuration = function(slot) return actionTimers[slot] end,
+}
+C_Spell = {
+    GetSpellName = tostring,
+    GetSpellCooldownDuration = function(id) return spellTimers[id] end,
+    GetSpellCooldown = function(id) return spellInfo[id] end,
+    GetSpellChargeDuration = function(id) return chargeTimers[id] end,
+    GetSpellCharges = function(id) return chargeInfo[id] end,
+}
+C_Item = {
+    GetItemCooldown = function(id)
+        local timer = itemTimers[id]
+        if timer then return timer.start, timer.duration, timer.enabled end
+    end,
+}
 
 local function login(guid, characterSaved, accountSaved)
     frames, player, combat, reloads, disk = {}, guid, false, 0, nil
@@ -261,4 +292,51 @@ combat = false
 event(nil, "PLAYER_REGEN_ENABLED")
 assert(frames.ForeverTouchLeftSet2Action1.attributes.item == "item:504")
 assert(ForeverTouchPreferences.mobileSlots == nil, "adding a set preserves automatic slots on the first set")
-print("Forever Touch profiles passed: persistence, migration, independent arc sets, editor changes and secure switching.")
+
+actionTimers[1], spellTimers[201] = {}, {}
+spellInfo[201] = secret
+itemTimers[501] = { start = 100, duration = 60, enabled = 1 }
+login(first, {
+    mobileSlots = { left = {{ kind = "spell", id = 201 }}, right = {{ kind = "desktop", key = "spell:101:" }} },
+    mobileArcPages = {{ slots = { left = {{ kind = "item", id = 501 }}, right = {} } }},
+})
+local spellButton = frames.ForeverTouchLeftAction1
+local actionCooldown = frames.ForeverTouchRightAction1.cooldown
+local itemCooldown = frames.ForeverTouchLeftSet2Action1.cooldown
+assert(spellButton.cooldown.drawSwipe and spellButton.cooldown.hideNumbers == false)
+assert(spellButton.cooldown.minimumCountdown == 2000, "brief global cooldowns should only show the sweep")
+assert(rawget(spellButton.cooldown, "timer") == spellTimers[201], "spells use the native duration object")
+assert(rawget(actionCooldown, "timer") == actionTimers[1], "mirrored action slots use the native duration object")
+
+combat = true
+chargeTimers[201] = {}
+chargeInfo[201] = { currentCharges = secret, maxCharges = 2, isActive = true, cooldownDuration = secret }
+event(nil, "SPELL_UPDATE_CHARGES")
+assert(rawget(spellButton.cooldown, "timer") == chargeTimers[201], "restricted recharges still render during combat")
+assert(spellButton.count.text == "")
+chargeInfo[201].currentCharges = 1
+event(nil, "SPELL_UPDATE_CHARGES")
+assert(spellButton.count.text == 1, "a single remaining charge is shown alongside the recharge timer")
+
+itemTimers[501].duration = 45
+event(nil, "BAG_UPDATE_COOLDOWN")
+assert(itemCooldown.timer.duration == 60, "an inactive set waits until it becomes visible")
+cycleSet()
+assert(itemCooldown.timer.duration == 45 and itemCooldown.timer.rate == 1, "switching sets refreshes item timers")
+itemTimers[501].enabled = 0
+event(nil, "BAG_UPDATE_COOLDOWN")
+assert(rawget(itemCooldown, "timer") == nil, "an item cooldown on hold is cleared")
+
+spellTimers[201], chargeTimers[201] = nil, nil
+chargeInfo[201].isActive = false
+spellInfo[201] = { startTime = 120, duration = 12, modRate = .75, isActive = true }
+cycleSet()
+assert(spellButton.cooldown.timer.duration == 12 and spellButton.cooldown.timer.rate == .75)
+spellInfo[201].duration = secret
+event(nil, "SPELL_UPDATE_COOLDOWN")
+assert(rawget(spellButton.cooldown, "timer") == nil, "restricted numeric data is never fed to the widget")
+spellInfo[201] = { startTime = 120, duration = 12, isActive = false }
+event(nil, "SPELL_UPDATE_COOLDOWN")
+assert(rawget(spellButton.cooldown, "timer") == nil, "inactive timers must not leave a stale sweep")
+
+print("Forever Touch profiles passed: persistence, arc sets, secure switching and spell, charge and item cooldowns.")
