@@ -400,6 +400,30 @@ event(nil, "PLAYER_REGEN_ENABLED")
 assert(frames.ForeverTouchLeftSet2Action1.attributes.item == "item:504")
 assert(ForeverTouchPreferences.mobileSlots == nil, "adding a set preserves automatic slots on the first set")
 
+login(first, primary)
+click("OpenEditor")
+click("DuplicateSet")
+local copiedSet = ForeverTouchPreferences.mobileArcPages[1]
+assert(ForeverTouchPreferences.mobileArcPage == 2 and reloads == 0, "copying selects and checkpoints the new set")
+assert(copiedSet.slots.left[1].id == 501 and copiedSet.slots.right[1].id == 201)
+assert(copiedSet.positions.left.x == primary.mobileArcPositions.left.x)
+assert(copiedSet.positions.left.y == primary.mobileArcPositions.left.y)
+replaceRight({ kind = "spell", id = 202 })
+click("SaveEditor")
+assert(reloads == 1 and disk.character.mobileSlots.right[1].id == 201, "editing the copy leaves its source intact")
+assert(disk.character.mobileArcPages[1].slots.right[1].id == 202)
+login(first, disk.character, disk.account)
+assert(frames.ForeverTouchRightSet2Action1.attributes.spell == 202 and frames.ForeverTouchCycleSet.refs.page2.shown)
+
+login(first)
+click("OpenEditor")
+click("DuplicateSet")
+local copiedSpell = ForeverTouchPreferences.mobileArcPages[1].slots.right[1]
+assert(copiedSpell.kind == "spell" and copiedSpell.id == 101, "copying captures automatically mirrored spells")
+assert(ForeverTouchPreferences.mobileSlots == nil, "the first set still mirrors the desktop bars")
+click("CancelEditor")
+assert(reloads == 0 and ForeverTouchPreferences.mobileArcPages == nil, "discard rolls back the duplicated set")
+
 actionTimers[1], spellTimers[201] = {}, {}
 spellInfo[201] = secret
 itemTimers[501] = { start = 100, duration = 60, enabled = 1 }
@@ -535,4 +559,4 @@ local point, relative, relativePoint, x, y = chat:GetPoint()
 assert(point == "TOPRIGHT" and relative == UIParent and relativePoint == "TOPRIGHT" and x == -45 and y == -110)
 assert(chat:GetWidth() == 390 and chat:GetHeight() == 142 and entry:GetPoint() == "TOP")
 
-print("Forever Touch passed: arc autosave, profile persistence, secure switching, cooldowns, professions and chat placement.")
+print("Forever Touch passed: arc duplication, autosave, profile persistence, secure switching, cooldowns, professions and chat placement.")

@@ -472,7 +472,7 @@ for _, side in ipairs(SIDES) do
     group.add = add
 end
 
-local previousSet, nextSet, addSet, removeSet, setCaption
+local previousSet, nextSet, removeSet, setCaption
 
 updateEditor = function()
     if not draft then return end
@@ -535,13 +535,21 @@ end)
 nextSet = setControl("NextSet", "›", "TOPRIGHT", -4, -68, 42, function()
     draft.index = math.min(#draft.pages, draft.index + 1)
 end)
-addSet = setControl("AddSet", german and "Neues Set" or "Add set", "BOTTOMLEFT", 4, 0, 129, function()
+local function appendSet(slots)
     local current = draft.pages[draft.index]
-    draft.pages[#draft.pages + 1] = { slots = Actions.copyProfile(), positions = copyPositions(current.positions) }
+    draft.pages[#draft.pages + 1] = { slots = slots, positions = copyPositions(current.positions) }
     draft.index = #draft.pages
     checkpointDraft()
+end
+
+setControl("AddSet", german and "Neues Set" or "Add set", "BOTTOMLEFT", 4, 0, 88, function()
+    appendSet(Actions.copyProfile())
 end)
-removeSet = setControl("RemoveSet", german and "Set löschen" or "Remove set", "BOTTOMRIGHT", -4, 0, 129, function()
+setControl("DuplicateSet", german and "Kopieren" or "Duplicate", "BOTTOM", 0, 0, 88, function()
+    local current = draft.pages[draft.index]
+    appendSet(Actions.independentProfile(current.slots, desktopRecords))
+end)
+removeSet = setControl("RemoveSet", german and "Löschen" or "Delete set", "BOTTOMRIGHT", -4, 0, 88, function()
     if draft.index == 1 then return end
     table.remove(draft.pages, draft.index)
     draft.index = math.min(draft.index, #draft.pages)
