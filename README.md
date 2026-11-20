@@ -4,10 +4,10 @@
 
 | APK | Devices |
 | --- | --- |
-| [Standard .20 Standalone](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.20/WoW-Forever-Mobile-2.4.4-mobile.20-Standalone.apk) | Snapdragon 8 series with Adreno 7xx or 8xx |
-| [Pixel 9 and 10 · .20-pixel.1](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.20/WoW-Forever-Mobile-2.4.4-mobile.20-Pixel.apk) | Pixel 9 and 10 models listed below |
+| [Standard .21 Standalone](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.21/WoW-Forever-Mobile-2.4.4-mobile.21-Standalone.apk) | Snapdragon 8 series with Adreno 7xx or 8xx |
+| [Pixel 9 and 10 · .21-pixel.1](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.21/WoW-Forever-Mobile-2.4.4-mobile.21-Pixel.apk) | Pixel 9 and 10 models listed below |
 
-**Android 10+ · ARM64** · [Release notes](https://github.com/bthginfo/wow-forever-mobile/releases/tag/v2.4.4-mobile.20)
+**Android 10+ · ARM64** · [GitHub release](https://github.com/bthginfo/wow-forever-mobile/releases/tag/v2.4.4-mobile.21)
 
 An Android launcher and touch interface for Blizzard’s Windows ARM64 WoW Forever client. The launcher runs the client on the phone using Wine/Proton. It includes a browser-based Battle.net login, Android keyboard and clipboard controls, and a configurable in-game touch HUD.
 
@@ -54,7 +54,7 @@ The launcher downloads the matching `_forever_/Wow-ARM64.exe` from Blizzard when
 
 ### Update an existing installation
 
-Install the .20 APK directly over the matching .19 edition. When moving from .18 or an earlier test build, Android requires a fresh installation because those editions use different signing keys. Keep your WoW folder and `_forever_/WTF` in shared storage, then select that folder with **Find existing game files**. [Previous .19 release](https://github.com/bthginfo/wow-forever-mobile/releases/tag/v2.4.4-mobile.19)
+Install the .21 APK directly over the matching .19 or .20 edition. When moving from .18 or an earlier test build, Android requires a fresh installation because those editions use different signing keys. Keep your WoW folder and `_forever_/WTF` in shared storage, then select that folder with **Find existing game files**. [Previous .20 release](https://github.com/bthginfo/wow-forever-mobile/releases/tag/v2.4.4-mobile.20)
 
 ### Pixel 9 and 10
 
@@ -126,7 +126,7 @@ Fullscreen is on by default. Open **More controls** in the game toolbar to enter
 
 ## Build from source
 
-The [source for both .20 APKs](https://github.com/bthginfo/wow-forever-mobile/tree/v2.4.4-mobile.20) has its own build instructions and Forever Touch tests.
+The [source for both .21 APKs](https://github.com/bthginfo/wow-forever-mobile/tree/v2.4.4-mobile.21) has its own build instructions and Forever Touch tests.
 
 Use JDK 17, Android SDK Platform 36, build-tools 35.0.0, and NDK 27.3.13750724. Point `local.properties` at your Android SDK. For a fresh checkout, build the ARM64 Wine login helper into `app/src/main/assets/wow-session-bridge.exe`. [Helper build and test instructions](tools/wow-session-bridge/README.md)
 
