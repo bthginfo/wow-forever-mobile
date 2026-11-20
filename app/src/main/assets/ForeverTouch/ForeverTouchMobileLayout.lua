@@ -579,7 +579,7 @@ local function finishEditing(save)
     refreshSlots()
 end
 
-local function editorBinding(name, action)
+local function clickBinding(name, action)
     local button = CreateFrame("Button", "ForeverTouch" .. name, UIParent)
     button:SetSize(1, 1)
     button:SetPoint("TOPLEFT", UIParent, "TOPLEFT", -10, 10)
@@ -589,11 +589,14 @@ local function editorBinding(name, action)
     return button:GetName()
 end
 
-local editorBindings = {
-    ["CTRL-SHIFT-F7"] = editorBinding("OpenEditor", openEditor),
-    ["CTRL-SHIFT-F1"] = editorBinding("SaveEditor", function() finishEditing(true) end),
-    ["CTRL-SHIFT-F2"] = editorBinding("CancelEditor", function() finishEditing(false) end),
-    ["CTRL-SHIFT-HOME"] = editorBinding("ResetEditor", resetEditor),
+local clickBindings = {
+    ["CTRL-SHIFT-F7"] = clickBinding("OpenEditor", openEditor),
+    ["CTRL-SHIFT-F1"] = clickBinding("SaveEditor", function() finishEditing(true) end),
+    ["CTRL-SHIFT-F2"] = clickBinding("CancelEditor", function() finishEditing(false) end),
+    ["CTRL-SHIFT-HOME"] = clickBinding("ResetEditor", resetEditor),
+    ["CTRL-SHIFT-PAGEDOWN"] = clickBinding("GroupFinder", function(_, _, down)
+        if not down and ToggleGroupFinderFrame then ToggleGroupFinderFrame() end
+    end),
 }
 
 local function framePoints(frame)
@@ -863,7 +866,7 @@ local function installBindings()
     SetOverrideBinding(events, true, "CTRL-SHIFT-F4", "TOGGLETALENTS")
     SetOverrideBinding(events, true, "CTRL-SHIFT-F5", "TOGGLEQUESTLOG")
     SetOverrideBinding(events, true, "CTRL-SHIFT-F6", "TOGGLESPELLBOOK")
-    for key, button in pairs(editorBindings) do SetOverrideBindingClick(events, true, key, button) end
+    for key, button in pairs(clickBindings) do SetOverrideBindingClick(events, true, key, button) end
     SetOverrideBindingClick(events, true, "CTRL-SHIFT-F8", chatButton:GetName())
     SetOverrideBinding(events, true, "CTRL-SHIFT-F9", "OPENALLBAGS")
     SetOverrideBinding(events, true, "CTRL-SHIFT-F10", "INTERACTTARGET")
@@ -872,7 +875,6 @@ local function installBindings()
     SetOverrideBinding(events, true, "CTRL-SHIFT-INSERT", "TOGGLEPROFESSIONBOOK")
     SetOverrideBinding(events, true, "CTRL-SHIFT-END", "TOGGLEFRIENDSTAB")
     SetOverrideBinding(events, true, "CTRL-SHIFT-PAGEUP", "TOGGLEGUILDTAB")
-    SetOverrideBinding(events, true, "CTRL-SHIFT-PAGEDOWN", "TOGGLEGROUPFINDER")
     SetOverrideBinding(events, true, "CTRL-SHIFT-DELETE", "TOGGLECOLLECTIONS")
     SetOverrideBinding(events, false, "W", "MOVEFORWARD")
     SetOverrideBinding(events, false, "S", "MOVEBACKWARD")

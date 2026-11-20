@@ -107,7 +107,7 @@ function InCombatLockdown() return combat end
 function GetActionInfo(slot) if slot == 1 then return "spell", 101 end end
 function GetActionTexture(slot) if slot == 1 then return 1001 end end
 function SetOverrideBinding(_, _, key, command) bindings[key] = command end
-function SetOverrideBindingClick() end
+function SetOverrideBindingClick(_, _, key, button) bindings[key] = button end
 function SaveBindings() error("The HUD must leave WoW's keyboard bindings alone") end
 function IsInGroup() return false end
 function IsInGuild() return false end
@@ -396,8 +396,14 @@ assert(#professions == 2 and professions[1].id == 303 and professions[2].id == 3
 assert(bindings["CTRL-SHIFT-INSERT"] == "TOGGLEPROFESSIONBOOK")
 assert(bindings["CTRL-SHIFT-END"] == "TOGGLEFRIENDSTAB")
 assert(bindings["CTRL-SHIFT-PAGEUP"] == "TOGGLEGUILDTAB")
-assert(bindings["CTRL-SHIFT-PAGEDOWN"] == "TOGGLEGROUPFINDER")
+assert(bindings["CTRL-SHIFT-PAGEDOWN"] == "ForeverTouchGroupFinder")
 assert(bindings["CTRL-SHIFT-DELETE"] == "TOGGLECOLLECTIONS")
+local groupFinderOpens = 0
+ToggleGroupFinderFrame = function() groupFinderOpens = groupFinderOpens + 1 end
+local groupFinder = frames.ForeverTouchGroupFinder
+groupFinder.scripts.OnClick(groupFinder, "LeftButton", true)
+click("GroupFinder")
+assert(groupFinderOpens == 1, "the panel delegates one toggle per tap to WoW")
 
 click("OpenEditor")
 local add = control("+")
