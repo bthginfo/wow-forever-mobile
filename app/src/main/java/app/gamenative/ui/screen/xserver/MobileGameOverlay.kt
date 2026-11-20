@@ -68,6 +68,13 @@ private val overlayBackground = Color(0xEB191610)
 private val overlayBorder = Color(0xB2977846)
 private val overlayAccent = Color(0xFFEAC783)
 private val overlayText = Color(0xFFF5E5C9)
+private val gamePanelShortcuts = listOf(
+    R.string.mobile_professions to XKeycode.KEY_INSERT,
+    R.string.mobile_friends to XKeycode.KEY_END,
+    R.string.mobile_guild to XKeycode.KEY_PRIOR,
+    R.string.mobile_group_finder to XKeycode.KEY_NEXT,
+    R.string.mobile_collections to XKeycode.KEY_DEL,
+)
 
 @Composable
 internal fun BoxScope.MobileGameOverlay(
@@ -266,6 +273,12 @@ internal fun BoxScope.MobileGameOverlay(
                                     showMenu = false
                                     controls.openHudEditor(MobileHudEditor.Skills)
                                 })
+                                for ((label, key) in gamePanelShortcuts) {
+                                    DropdownMenuItem(text = { Text(stringResource(label)) }, onClick = {
+                                        showMenu = false
+                                        controls.tap(key, modified = true)
+                                    })
+                                }
                                 DropdownMenuItem(text = { Text(stringResource(R.string.mobile_camera_sensitivity)) }, onClick = {
                                     showMenu = false
                                     showSensitivity = true

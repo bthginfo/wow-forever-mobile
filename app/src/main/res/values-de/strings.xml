@@ -638,6 +638,11 @@
     <string name="mobile_talents">Talente</string>
     <string name="mobile_quests">Quests</string>
     <string name="mobile_spellbook">Zauberbuch</string>
+    <string name="mobile_professions">Berufe</string>
+    <string name="mobile_friends">Freunde</string>
+    <string name="mobile_guild">Gilde</string>
+    <string name="mobile_group_finder">Gruppensuche</string>
+    <string name="mobile_collections">Sammlung</string>
     <string name="mobile_arrange_skills">Skills bearbeiten</string>
     <string name="mobile_edit_layout">Bedienelemente verschieben</string>
     <string name="mobile_edit_layout_hint">Zieh die Bedienelemente oder die Menüleiste an ihren Platz.</string>

@@ -4,10 +4,10 @@
 
 | APK | Devices |
 | --- | --- |
-| [Standard .18 Standalone](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.18/WoW-Forever-Mobile-2.4.4-mobile.18-Standalone.apk) | Snapdragon 8 series with Adreno 7xx or 8xx |
-| [Pixel 9 and 10 · .18-pixel.1](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.18/WoW-Forever-Mobile-2.4.4-mobile.18-Pixel.apk) | Pixel 9 and 10 models listed below |
+| [Standard .19 Standalone](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.19/WoW-Forever-Mobile-2.4.4-mobile.19-Standalone.apk) | Snapdragon 8 series with Adreno 7xx or 8xx |
+| [Pixel 9 and 10 · .19-pixel.1](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.19/WoW-Forever-Mobile-2.4.4-mobile.19-Pixel.apk) | Pixel 9 and 10 models listed below |
 
-**Android 10+ · ARM64** · [Release notes](https://github.com/bthginfo/wow-forever-mobile/releases/tag/v2.4.4-mobile.18)
+**Android 10+ · ARM64** · [Release notes](https://github.com/bthginfo/wow-forever-mobile/releases/tag/v2.4.4-mobile.19)
 
 An Android launcher and touch interface for Blizzard’s Windows ARM64 WoW Forever client. The launcher runs the client on the phone using Wine/Proton. It includes a browser-based Battle.net login, Android keyboard and clipboard controls, and a configurable in-game touch HUD.
 
@@ -52,9 +52,9 @@ WoW Forever/
 
 The launcher downloads the matching `_forever_/Wow-ARM64.exe` from Blizzard when needed. A fresh setup downloads the ARM64 client and archive indexes first. WoW caches additional zones and assets as you play.
 
-### Update from .17
+### Update from .18 or an earlier test build
 
-Both .18 APKs use a new test signing key. Android requires a fresh installation when moving from .17. Before removing .17, keep your WoW folder, including `_forever_/WTF` for character settings and arc layouts, in shared storage. After installing .18, grant storage access and select the folder with **Find existing game files**. The Standard APK appears as **WoW Forever Mobile Standalone**. [Previous .17 release](https://github.com/bthginfo/wow-forever-mobile/releases/tag/v2.4.4-mobile.17)
+Both .19 APKs use a new test signing key. Android requires a fresh installation when moving from .18 or an earlier test build. Before removing the old app, keep your WoW folder, including `_forever_/WTF` for character settings and arc layouts, in shared storage. After installing .19, grant storage access and select the folder with **Find existing game files**. The Standard APK appears as **WoW Forever Mobile Standalone**. [Previous .18 release](https://github.com/bthginfo/wow-forever-mobile/releases/tag/v2.4.4-mobile.18)
 
 ### Pixel 9 and 10
 
@@ -85,6 +85,7 @@ The Pixel build checks Direct3D 11 before opening Battle.net sign-in. If the gra
 | Toolbar arrow | Minimizes the toolbar to one button. Tap it to show the shortcuts again. |
 | More controls → Edit controls | Moves the sticks, shortcuts, or toolbar |
 | More controls → Edit skills | Assigns spells and usable bag items, swaps slots by dragging, and moves the arcs by their handles |
+| More controls → Professions, Friends, Guild, Group Finder, Collections | Opens these WoW panels |
 | More controls → Camera sensitivity | Sets how quickly the camera turns |
 | More controls → Enter or exit fullscreen | Hides or shows the Android status and navigation bars |
 | More controls → Text input | Opens the Android keyboard and paste controls for the game |
@@ -98,7 +99,11 @@ Open **More controls → Edit skills → Add set**. Each set has its own left an
 
 Starting with .18, spell and item icons show a circular cooldown sweep and the remaining time. Brief cooldowns under two seconds show the sweep alone. Spells with charges show the time until the next charge while recharging.
 
-Starting with .16, saving skill changes outside combat briefly reloads the WoW interface to write the layout to disk. If you save during combat, log out through WoW or use `/reload` afterward to write it to disk.
+Tap **Save** to write the arc layout through WoW’s saved variables. WoW briefly reloads its interface and displays **Arc layout saved** after reading the saved layout back. When you tap **Save** during combat, the reload waits until combat ends. A normal WoW logout also writes the layout.
+
+To bind a learned entry such as Smelting or Fishing, open **More controls → Edit skills**, tap **+** and choose **Professions** in the slot picker.
+
+Move the chat frame in WoW’s **Edit Mode** and save that WoW layout. When you open the mobile keyboard, chat temporarily moves above it and returns to your saved position when you finish typing.
 
 ### Tablets and fullscreen
 
@@ -121,7 +126,7 @@ Fullscreen is on by default. Open **More controls** in the game toolbar to enter
 
 ## Build from source
 
-The [source for both .18 APKs](https://github.com/bthginfo/wow-forever-mobile/tree/android-pixel-vulkan) is on `android-pixel-vulkan`. Run `lua tools/test_forever_touch_profiles.lua` to check arc set migration, editing, switching and cooldown updates with simulated WoW events.
+The [source for both .19 APKs](https://github.com/bthginfo/wow-forever-mobile/tree/android-pixel-vulkan) is on `android-pixel-vulkan`. Run `lua tools/test_forever_touch_profiles.lua` to check arc persistence, cooldowns, profession bindings, game panel shortcuts, and chat placement with simulated WoW events.
 
 Use JDK 17, Android SDK Platform 36, build-tools 35.0.0, and NDK 27.3.13750724. Point `local.properties` at your Android SDK. For a fresh checkout, build the ARM64 Wine login helper into `app/src/main/assets/wow-session-bridge.exe`. [Helper build and test instructions](tools/wow-session-bridge/README.md)
 

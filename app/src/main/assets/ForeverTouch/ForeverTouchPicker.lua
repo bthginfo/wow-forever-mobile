@@ -41,7 +41,15 @@ function addon.createSlotPicker(parent)
     local pages = picker:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     pages:SetPoint("BOTTOM", picker, "BOTTOM", 0, 19)
 
-    local previous, nextPage, spellTab, itemTab
+    local categories = {
+        { kind = "spell", label = german and "Zauberbuch" or "Spellbook", choices = Actions.spellChoices,
+            empty = german and "Keine aktiven Zauber im Zauberbuch." or "No active spells in your spellbook." },
+        { kind = "profession", label = german and "Berufe" or "Professions", choices = Actions.professionChoices,
+            empty = german and "Keine aktiven Berufsaktionen gelernt." or "No learned profession actions." },
+        { kind = "item", label = german and "Taschen" or "Bags", choices = Actions.itemChoices,
+            empty = german and "Keine benutzbaren Gegenstände in den Taschen." or "No usable items in your bags." },
+    }
+    local previous, nextPage
     local function render()
         local total = math.max(1, math.ceil(#choices / PAGE_SIZE))
         page = math.min(page, total)
@@ -56,27 +64,31 @@ function addon.createSlotPicker(parent)
         end
         previous:SetEnabled(page > 1)
         nextPage:SetEnabled(page < total)
-        spellTab:SetEnabled(currentKind ~= "spell")
-        itemTab:SetEnabled(currentKind ~= "item")
+        for _, category in ipairs(categories) do
+            local active = currentKind == category.kind
+            category.button:SetEnabled(not active)
+            if active then empty:SetText(category.empty) end
+        end
         pages:SetText(total > 1 and string.format("%d / %d", page, total) or "")
-        empty:SetText(currentKind == "spell"
-            and (german and "Keine aktiven Zauber im Zauberbuch." or "No active spells in your spellbook.")
-            or (german and "Keine benutzbaren Gegenstände in den Taschen." or "No usable items in your bags."))
         empty:SetShown(#choices == 0)
     end
 
     local function showCategory(kind)
-        currentKind, page = kind, 1
-        if kind == "spell" then
-            choices = Actions.spellChoices()
-        else
-            choices = Actions.itemChoices()
+        for _, category in ipairs(categories) do
+            if kind == category.kind then
+                currentKind, page = kind, 1
+                choices = category.choices()
+                render()
+                return
+            end
         end
-        render()
     end
 
-    spellTab = control(german and "Zauberbuch" or "Spellbook", 138, 16, 51, function() showCategory("spell") end)
-    itemTab = control(german and "Taschen" or "Bags", 138, 162, 51, function() showCategory("item") end)
+    for index, category in ipairs(categories) do
+        category.button = control(category.label, 138, 16 + (index - 1) * 146, 51, function()
+            showCategory(category.kind)
+        end)
+    end
     previous = control("‹", 54, 16, 345, function() page = page - 1; render() end)
     nextPage = control("›", 54, 405, 345, function() page = page + 1; render() end)
 

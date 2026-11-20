@@ -244,6 +244,19 @@ local function sortedChoices(choices)
     return choices
 end
 
+local function appendSpellChoice(choices, seen, entry, spellType)
+    if not entry or entry.itemType ~= spellType or entry.isPassive or entry.isOffSpec then return end
+    local id = entry.actionID or entry.spellID
+    if not validID(id) or seen[id] then return end
+
+    local binding = { kind = "spell", id = id }
+    local name = entry.name or Actions.name(binding, {})
+    if isSecret(name) or not name then return end
+    seen[id] = true
+    binding.name, binding.icon = name, entry.iconID
+    choices[#choices + 1] = binding
+end
+
 function Actions.spellChoices()
     local book = C_SpellBook
     local bank = Enum and Enum.SpellBookSpellBank and Enum.SpellBookSpellBank.Player
@@ -254,21 +267,36 @@ function Actions.spellChoices()
         local info = book.GetSpellBookSkillLineInfo(line)
         if info and not info.shouldHide and not info.offSpecID then
             for slot = info.itemIndexOffset + 1, info.itemIndexOffset + info.numSpellBookItems do
-                local entry = book.GetSpellBookItemInfo(slot, bank)
-                local id = entry and (entry.actionID or entry.spellID)
-                if entry and entry.itemType == spellType and validID(id) and not seen[id]
-                        and not entry.isPassive and not entry.isOffSpec then
-                    local binding = { kind = "spell", id = id }
-                    local name = entry.name or Actions.name(binding, {})
-                    if not isSecret(name) and name then
-                        seen[id] = true
-                        binding.name, binding.icon = name, entry.iconID
-                        choices[#choices + 1] = binding
+                appendSpellChoice(choices, seen, book.GetSpellBookItemInfo(slot, bank), spellType)
+            end
+        end
+    end
+    return sortedChoices(choices)
+end
+
+function Actions.professionChoices()
+    local book = C_SpellBook
+    local bank = Enum and Enum.SpellBookSpellBank and Enum.SpellBookSpellBank.Player
+    local spellType = Enum and Enum.SpellBookItemType and Enum.SpellBookItemType.Spell
+    local choices, seen = {}, {}
+    if not GetProfessions or not GetProfessionInfo or not book or not book.GetSpellBookItemInfo
+            or not bank or not spellType then return choices end
+
+    -- Learned professions can leave gaps between the primary and secondary entries.
+    local function appendProfessions(...)
+        for index = 1, select("#", ...) do
+            local profession = select(index, ...)
+            if validID(profession) then
+                local _, _, _, _, count, offset = GetProfessionInfo(profession)
+                if number(count) > 0 and not isSecret(offset) and type(offset) == "number" and offset >= 0 then
+                    for slot = offset + 1, offset + count do
+                        appendSpellChoice(choices, seen, book.GetSpellBookItemInfo(slot, bank), spellType)
                     end
                 end
             end
         end
     end
+    appendProfessions(GetProfessions())
     return sortedChoices(choices)
 end
 

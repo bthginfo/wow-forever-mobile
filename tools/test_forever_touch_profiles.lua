@@ -1,6 +1,7 @@
 -- Run with: lua tools/test_forever_touch_profiles.lua [add-on source directory]
 local source = (arg and arg[1]) or "app/src/main/assets/ForeverTouch"
 local frames, event, choose, player, combat, reloads, disk
+local playerName, playerRealm, bindings, callbacks, messages
 local secureClick
 
 local function copy(value)
@@ -9,6 +10,9 @@ local function copy(value)
     for key, element in pairs(value) do result[key] = copy(element) end
     return result
 end
+
+CopyTable = copy
+unpack = table.unpack
 
 local function guarded(frame)
     assert(not (combat and frame.protected and not secureClick), "insecure change to a protected frame during combat")
@@ -34,6 +38,7 @@ local methods = {
     GetAttribute = function(self, name) return self.attributes[name] end,
     SetFrameRef = function(self, name, frame) guarded(self); self.refs[name] = frame end,
     GetFrameRef = function(self, name) return self.refs[name] end,
+    GetFrameLevel = function() return 1 end,
     SetText = function(self, value) self.text = value end,
     SetDrawSwipe = function(self, enabled) self.drawSwipe = enabled end,
     SetHideCountdownNumbers = function(self, hidden) self.hideNumbers = hidden end,
@@ -56,7 +61,17 @@ local methods = {
     GetEffectiveScale = function(self) return rawget(self, "scale") or 1 end,
     GetLeft = function(self) return rawget(self, "left") or 0 end,
     GetBottom = function(self) return rawget(self, "bottom") or 0 end,
-    SetPoint = function(self, ...) guarded(self); self.point = {...} end,
+    SetPoint = function(self, ...)
+        guarded(self)
+        local points = rawget(self, "points") or {}
+        points[#points + 1] = {...}
+        self.points = points
+    end,
+    ClearAllPoints = function(self) guarded(self); self.points = {} end,
+    GetNumPoints = function(self) return #(rawget(self, "points") or {}) end,
+    GetPoint = function(self, index) return table.unpack(self.points[index or 1]) end,
+    SetWidth = function(self, width) guarded(self); self.width = width end,
+    IsProtected = function(self) return self.protected end,
     IsShown = function(self) return self.shown end,
     Show = function(self) guarded(self); self.shown = true end,
     Hide = function(self) guarded(self); self.shown = false end,
@@ -87,19 +102,24 @@ methods.CreateFontString = methods.CreateTexture
 
 function GetLocale() return "enUS" end
 function UnitGUID() return player end
+function UnitFullName() return playerName, playerRealm end
 function InCombatLockdown() return combat end
 function GetActionInfo(slot) if slot == 1 then return "spell", 101 end end
 function GetActionTexture(slot) if slot == 1 then return 1001 end end
-function SetOverrideBinding() end
+function SetOverrideBinding(_, _, key, command) bindings[key] = command end
 function SetOverrideBindingClick() end
 function SaveBindings() error("The HUD must leave WoW's keyboard bindings alone") end
+function IsInGroup() return false end
+function IsInGuild() return false end
 C_Timer = { After = function(_, callback) callback() end }
 C_UI = {
     Reload = function()
         reloads = reloads + 1
+        event(nil, "PLAYER_LOGOUT")
         disk = { character = copy(ForeverTouchPreferences), account = copy(ForeverTouchProfiles) }
     end,
 }
+EventRegistry = { RegisterCallback = function(_, key, callback) callbacks[key] = callback end }
 local secret = setmetatable({}, { __index = function() error("A restricted value must not be indexed") end })
 function issecretvalue(value) return rawequal(value, secret) end
 
@@ -121,12 +141,19 @@ C_Item = {
     end,
 }
 
-local function login(guid, characterSaved, accountSaved)
+local function login(guid, characterSaved, accountSaved, options)
+    options = options or {}
     frames, player, combat, reloads, disk = {}, guid, false, 0, nil
+    playerName, playerRealm = options.name, options.realm
+    bindings, callbacks, messages = {}, {}, {}
     secureClick, choose = false, nil
     ForeverTouchPreferences, ForeverTouchProfiles = nil, nil
     UIParent = CreateFrame("Frame", "UIParent")
     UIParent:SetSize(1536, 720)
+    DEFAULT_CHAT_FRAME = CreateFrame("Frame", "ChatFrame1", UIParent)
+    DEFAULT_CHAT_FRAME:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 10, 20)
+    DEFAULT_CHAT_FRAME:SetSize(430, 180)
+    UIErrorsFrame = { AddMessage = function(_, message) messages[#messages + 1] = message end }
     local addon = {
         createSlotPicker = function()
             local picker = CreateFrame("Frame")
@@ -142,11 +169,13 @@ local function login(guid, characterSaved, accountSaved)
         end,
     }
     assert(loadfile(source .. "/ForeverTouchActions.lua"))("ForeverTouch", addon)
+    if options.realPicker then assert(loadfile(source .. "/ForeverTouchPicker.lua"))("ForeverTouch", addon) end
     assert(loadfile(source .. "/ForeverTouchMobileLayout.lua"))("ForeverTouch", addon)
     -- The client loads SavedVariables after running the add-on's Lua chunks.
     ForeverTouchPreferences, ForeverTouchProfiles = copy(characterSaved), copy(accountSaved)
     event(nil, "PLAYER_LOGIN")
     event(nil, "PLAYER_ENTERING_WORLD")
+    return addon
 end
 
 local function click(name)
@@ -225,6 +254,7 @@ click("SaveEditor")
 assert(reloads == 0, "saving during combat must skip reloading the client UI")
 combat = false
 event(nil, "PLAYER_REGEN_ENABLED")
+assert(reloads == 1 and disk.character.mobileSlots.left[1].id == 501, "combat saves flush when combat ends")
 assert(frames.ForeverTouchLeftAction1.attributes.item == "item:501")
 
 login(first, primary, nil)
@@ -339,4 +369,87 @@ spellInfo[201] = { startTime = 120, duration = 12, isActive = false }
 event(nil, "SPELL_UPDATE_COOLDOWN")
 assert(rawget(spellButton.cooldown, "timer") == nil, "inactive timers must not leave a stale sweep")
 
-print("Forever Touch profiles passed: persistence, arc sets, secure switching and spell, charge and item cooldowns.")
+local spellBook = {
+    [1] = { itemType = 1, spellID = 201, name = "Heal" },
+    [6] = { itemType = 1, spellID = 301, name = "Smelting" },
+    [7] = { itemType = 1, spellID = 302, name = "Toughness", isPassive = true },
+    [10] = { itemType = 1, spellID = 303, name = "Fishing" },
+    [13] = { itemType = 1, spellID = 301, name = "Smelting" },
+}
+Enum = { SpellBookSpellBank = { Player = 0 }, SpellBookItemType = { Spell = 1 } }
+C_SpellBook = {
+    GetNumSpellBookSkillLines = function() return 1 end,
+    GetSpellBookSkillLineInfo = function() return { itemIndexOffset = 0, numSpellBookItems = 1 } end,
+    GetSpellBookItemInfo = function(slot, bank) assert(bank == 0); return spellBook[slot] end,
+}
+function GetProfessions() return nil, 31, nil, 54, nil, nil, 73 end
+function GetProfessionInfo(index)
+    local ranges = { [31] = {2, 5}, [54] = {1, 9}, [73] = {1, 12} }
+    return nil, nil, nil, nil, table.unpack(ranges[index])
+end
+
+local miner = { name = "Miner", realm = "Silver Moon", realPicker = true }
+local addon = login(nil, nil, nil, miner)
+local professions = addon.actions.professionChoices()
+assert(#professions == 2 and professions[1].id == 303 and professions[2].id == 301,
+    "the profession list includes learned actions across gaps without passives or duplicates")
+assert(bindings["CTRL-SHIFT-INSERT"] == "TOGGLEPROFESSIONBOOK")
+assert(bindings["CTRL-SHIFT-END"] == "TOGGLEFRIENDSTAB")
+assert(bindings["CTRL-SHIFT-PAGEUP"] == "TOGGLEGUILDTAB")
+assert(bindings["CTRL-SHIFT-PAGEDOWN"] == "TOGGLEGROUPFINDER")
+assert(bindings["CTRL-SHIFT-DELETE"] == "TOGGLECOLLECTIONS")
+
+click("OpenEditor")
+local add = control("+")
+add.scripts.OnClick(add)
+local professionTab = control("Professions")
+professionTab.scripts.OnClick(professionTab)
+local found = false
+for _, frame in ipairs(frames) do
+    local binding = rawget(frame, "binding")
+    if binding and binding.id == 301 and frame:IsShown() then
+        found = true
+        frame.scripts.OnClick(frame)
+        break
+    end
+end
+assert(found, "the profession picker offers a bindable Smelting button")
+combat = true
+click("SaveEditor")
+assert(messages[1] == "Arc layout will save after combat." and reloads == 0)
+event(nil, "PLAYER_ENTERING_WORLD")
+assert(#messages == 1, "changing zones is not confirmation of a pending save")
+combat = false
+event(nil, "PLAYER_REGEN_ENABLED")
+assert(reloads == 1 and disk.character.mobileSlots.left[1].id == 301)
+local account = disk.account
+local key = "character:0/silvermoon/miner"
+assert(account[key].mobileSlots.left[1].id == 301)
+assert(ForeverTouchProfiles[key] ~= ForeverTouchPreferences, "the account snapshot is independent of the live profile")
+login(nil, nil, account, miner)
+assert(frames.ForeverTouchLeftAction1.attributes.spell == 301 and messages[1] == "Arc layout saved.")
+login(nil, nil, account, { name = "Miner", realm = "Other Realm" })
+assert(not frames.ForeverTouchLeftAction1, "the same character name on another realm must not share a profile")
+
+local chat = DEFAULT_CHAT_FRAME
+chat:ClearAllPoints()
+chat:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -45, -110)
+chat:SetSize(390, 142)
+callbacks["EditMode.Exit"]()
+event(nil, "UI_SCALE_CHANGED")
+assert(chat:GetPoint() == "TOPRIGHT" and chat:GetWidth() == 390, "the game owns the saved chat position")
+local entry = CreateFrame("EditBox", nil, UIParent)
+entry:SetSize(390, 28)
+entry:SetPoint("TOP", chat, "BOTTOM", 0, -3)
+entry.chatFrame = chat
+entry.foreverTouchOriginalPoints, entry.foreverTouchHooks = false, false
+entry.HasFocus = function() return true end
+ChatFrameUtil = { GetActiveWindow = function() return entry end, OpenChat = function() return entry end }
+click("OpenChat")
+assert(chat:GetPoint() == "TOPLEFT" and entry:GetPoint() == "TOPLEFT", "typing temporarily brings chat above the keyboard")
+entry.scripts.OnEditFocusLost(entry)
+local point, relative, relativePoint, x, y = chat:GetPoint()
+assert(point == "TOPRIGHT" and relative == UIParent and relativePoint == "TOPRIGHT" and x == -45 and y == -110)
+assert(chat:GetWidth() == 390 and chat:GetHeight() == 142 and entry:GetPoint() == "TOP")
+
+print("Forever Touch passed: profile persistence, arc sets, secure switching, cooldowns, professions and chat placement.")

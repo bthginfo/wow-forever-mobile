@@ -24,7 +24,7 @@ local shade = editShield:CreateTexture(nil, "BACKGROUND")
 shade:SetAllPoints()
 shade:SetColorTexture(.07, .05, .03, .32)
 local picker = addon.createSlotPicker(editShield)
-local activeEditBox
+local activeEditBox, chatDock
 
 local groups = {}
 for _, side in ipairs(SIDES) do
@@ -35,10 +35,12 @@ for _, side in ipairs(SIDES) do
 end
 
 local livePages, defaults, desktopRecords, preferences
+local profileKey, alternateProfileKey, confirmSaved
 local actionPages = {}
 local draft, selected, dragFrom, moving
 local refreshSlots, refreshLiveButtons, updateEditor
 local pendingRefresh, refreshQueued = false, false
+local pendingSave, saveQueued = false, false
 
 local switcher = CreateFrame("Button", "ForeverTouchCycleSet", UIParent, "UIPanelButtonTemplate,SecureHandlerClickTemplate")
 switcher:SetFrameStrata("HIGH")
@@ -88,18 +90,56 @@ local function preferenceRevision(profile)
     return type(profile.revision) == "number" and profile.revision or 0
 end
 
+local function readableName(value)
+    if not isSecret(value) and type(value) == "string" and value ~= "" then return value end
+end
+
 local function loadPreferences()
-    local character = UnitGUID("player")
     if type(ForeverTouchProfiles) ~= "table" then ForeverTouchProfiles = {} end
     local profiles = ForeverTouchProfiles
-    local key = not isSecret(character) and type(character) == "string" and character ~= "" and character or nil
-    local primary, backup = ForeverTouchPreferences, key and profiles[key]
+    local guid = readableName(UnitGUID("player"))
+    local name, realm
+    if UnitFullName then name, realm = UnitFullName("player") end
+    name, realm = readableName(name), readableName(realm)
+    if not realm and GetNormalizedRealmName then realm = readableName(GetNormalizedRealmName()) end
+    local region = GetCurrentRegion and GetCurrentRegion()
+    if isSecret(region) or type(region) ~= "number" then region = 0 end
+    local nameKey = name and realm and ("character:" .. region .. "/" .. realm:gsub("%s+", ""):lower() .. "/" .. name:lower())
 
-    -- Keep the legacy character file and a second copy scoped to the same character.
-    if preferenceRevision(backup) > preferenceRevision(primary) then primary = backup end
-    preferences = type(primary) == "table" and primary or {}
+    local primary = ForeverTouchPreferences
+    local byGUID, byName = guid and profiles[guid], nameKey and profiles[nameKey]
+    if preferenceRevision(byGUID) > preferenceRevision(primary) then primary = byGUID end
+    if preferenceRevision(byName) > preferenceRevision(primary) then primary = byName end
+    -- Keep the legacy GUID lookup and a name fallback for clients that withhold the GUID.
+    profileKey, alternateProfileKey = guid or nameKey, guid and nameKey
+    preferences = type(primary) == "table" and CopyTable(primary) or {}
+    confirmSaved = preferences.confirmArcSave
+    preferences.confirmArcSave = nil
     ForeverTouchPreferences = preferences
-    if key then profiles[key] = preferences end
+end
+
+local function checkpointPreferences()
+    if not preferences then return end
+    ForeverTouchPreferences = preferences
+    if profileKey then ForeverTouchProfiles[profileKey] = CopyTable(preferences) end
+    if alternateProfileKey then ForeverTouchProfiles[alternateProfileKey] = CopyTable(preferences) end
+end
+
+local function saveFeedback(message)
+    if UIErrorsFrame then UIErrorsFrame:AddMessage(message, .42, .91, .64, 1) end
+end
+
+local function flushSave()
+    if not pendingSave or saveQueued or draft or InCombatLockdown() then return end
+    saveQueued = true
+    C_Timer.After(0, function()
+        saveQueued = false
+        if not pendingSave or draft or InCombatLockdown() then return end
+        pendingSave = false
+        checkpointPreferences()
+        local reload = C_UI and C_UI.Reload or ReloadUI
+        if reload then reload() end
+    end)
 end
 
 local function makeSkillArt(button)
@@ -495,9 +535,11 @@ end
 local function finishEditing(save)
     if not draft then return end
     stopMoving()
-    local changed = false
+    local changed, selectedSetChanged = false, false
     if save then
-        preferences.mobileArcPage = draft.index > 1 and draft.index or nil
+        local selectedSet = draft.index > 1 and draft.index or nil
+        selectedSetChanged = selectedSet ~= preferences.mobileArcPage
+        preferences.mobileArcPage = selectedSet
         changed = draft.structureChanged
         for _, page in ipairs(draft.pages) do
             changed = changed or page.changed or page.reset or page.moved
@@ -518,18 +560,23 @@ local function finishEditing(save)
             more[#more + 1] = { slots = Actions.independentProfile(page.slots, desktopRecords), positions = page.positions }
         end
         preferences.mobileArcPages = #more > 0 and more or nil
+    end
+    if changed or selectedSetChanged then
         preferences.revision = preferenceRevision(preferences) + 1
+        preferences.confirmArcSave = true
+        checkpointPreferences()
+        pendingSave = true
+        if InCombatLockdown() then
+            saveFeedback(german and "Arc-Belegung wird nach dem Kampf gespeichert." or "Arc layout will save after combat.")
+        end
     end
     picker:Hide()
     draft, selected, dragFrom = nil, nil, nil
     editShield:Hide()
     setActionAlpha(1)
+    -- Schedule the save independently of rendering the updated buttons.
+    flushSave()
     refreshSlots()
-    if changed and not InCombatLockdown() then
-        -- WoW writes SavedVariables on reload. Call from the Save click so the client can flush immediately.
-        local reload = C_UI and C_UI.Reload or ReloadUI
-        if reload then reload() end
-    end
 end
 
 local function editorBinding(name, action)
@@ -537,6 +584,7 @@ local function editorBinding(name, action)
     button:SetSize(1, 1)
     button:SetPoint("TOPLEFT", UIParent, "TOPLEFT", -10, 10)
     button:EnableMouse(false)
+    button:RegisterForClicks("LeftButtonDown", "LeftButtonUp")
     button:SetScript("OnClick", action)
     return button:GetName()
 end
@@ -548,18 +596,34 @@ local editorBindings = {
     ["CTRL-SHIFT-HOME"] = editorBinding("ResetEditor", resetEditor),
 }
 
-local function dockChat(composing)
-    local primary = DEFAULT_CHAT_FRAME
-    if not primary or (InCombatLockdown() and primary:IsProtected()) then return end
+local function framePoints(frame)
+    local points = {}
+    for index = 1, frame:GetNumPoints() do points[index] = { frame:GetPoint(index) } end
+    return points
+end
+
+local function restorePoints(frame, points)
+    frame:ClearAllPoints()
+    for _, point in ipairs(points) do frame:SetPoint(unpack(point, 1, 5)) end
+end
+
+local function restoreChat()
+    if not chatDock then return end
+    local frame = chatDock.frame
+    if InCombatLockdown() and frame:IsProtected() then return end
+    restorePoints(frame, chatDock.points)
+    frame:SetSize(chatDock.width, chatDock.height)
+    chatDock = nil
+end
+
+local function dockChatForTyping(frame)
+    if chatDock or not frame or (InCombatLockdown() and frame:IsProtected()) then return end
+    if EditModeManagerFrame and EditModeManagerFrame:IsEditModeActive() then return end
+    chatDock = { frame = frame, points = framePoints(frame), width = frame:GetWidth(), height = frame:GetHeight() }
     local height = UIParent:GetHeight()
-    primary:ClearAllPoints()
-    if composing then
-        primary:SetPoint("TOPLEFT", UIParent, "TOPLEFT", height * .075, -height * .225)
-        primary:SetSize(height * .82, height * .155)
-    else
-        primary:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", height * .075, height * .573)
-        primary:SetSize(height * .61, height * .155)
-    end
+    frame:ClearAllPoints()
+    frame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", height * .075, -height * .225)
+    frame:SetSize(height * .82, height * .155)
 end
 
 local desktopBarNames = {
@@ -630,7 +694,6 @@ local function layoutHUD()
     if InCombatLockdown() then return end
     local height = UIParent:GetHeight()
     updateDesktopBars()
-    dockChat(activeEditBox ~= nil)
 
     -- Leave room below quests for the right thumb arc even after WoW refreshes the tracker.
     local tracker = ObjectiveTrackerFrame
@@ -696,26 +759,23 @@ chatButton:SetScript("OnClick", function()
 
     -- Put the real WoW edit box above the landscape Android keyboard without losing its channel or history.
     if not editBox.foreverTouchOriginalPoints then
-        local points = {}
-        for index = 1, editBox:GetNumPoints() do points[index] = { editBox:GetPoint(index) } end
-        editBox.foreverTouchOriginalPoints = points
+        editBox.foreverTouchOriginalPoints = framePoints(editBox)
         editBox.foreverTouchOriginalWidth = editBox:GetWidth()
     end
     if not editBox.foreverTouchHooks then
         editBox.foreverTouchHooks = true
         editBox:HookScript("OnEditFocusLost", function(self)
             if not self.foreverTouchOriginalPoints then return end
-            self:ClearAllPoints()
             self:SetWidth(self.foreverTouchOriginalWidth)
-            for _, point in ipairs(self.foreverTouchOriginalPoints) do self:SetPoint(unpack(point)) end
+            restorePoints(self, self.foreverTouchOriginalPoints)
             self.foreverTouchOriginalPoints = nil
             activeEditBox = nil
             chatControls:Hide()
-            dockChat(false)
+            restoreChat()
         end)
     end
     local height = UIParent:GetHeight()
-    dockChat(true)
+    dockChatForTyping(editBox.chatFrame or DEFAULT_CHAT_FRAME)
     editBox:ClearAllPoints()
     editBox:SetPoint("TOPLEFT", UIParent, "TOPLEFT", height * .075, -height * .147)
     editBox:SetWidth(height * .93)
@@ -809,6 +869,11 @@ local function installBindings()
     SetOverrideBinding(events, true, "CTRL-SHIFT-F10", "INTERACTTARGET")
     SetOverrideBinding(events, true, "CTRL-SHIFT-F11", "TOGGLEWORLDMAP")
     SetOverrideBinding(events, true, "CTRL-SHIFT-F12", "TARGETNEARESTENEMY")
+    SetOverrideBinding(events, true, "CTRL-SHIFT-INSERT", "TOGGLEPROFESSIONBOOK")
+    SetOverrideBinding(events, true, "CTRL-SHIFT-END", "TOGGLEFRIENDSTAB")
+    SetOverrideBinding(events, true, "CTRL-SHIFT-PAGEUP", "TOGGLEGUILDTAB")
+    SetOverrideBinding(events, true, "CTRL-SHIFT-PAGEDOWN", "TOGGLEGROUPFINDER")
+    SetOverrideBinding(events, true, "CTRL-SHIFT-DELETE", "TOGGLECOLLECTIONS")
     SetOverrideBinding(events, false, "W", "MOVEFORWARD")
     SetOverrideBinding(events, false, "S", "MOVEBACKWARD")
     SetOverrideBinding(events, false, "Q", "STRAFELEFT")
@@ -826,7 +891,7 @@ local function queueRefresh()
 end
 
 for _, event in ipairs({
-    "PLAYER_LOGIN", "PLAYER_ENTERING_WORLD", "ACTIONBAR_SLOT_CHANGED", "ACTIONBAR_PAGE_CHANGED",
+    "PLAYER_LOGIN", "PLAYER_LOGOUT", "PLAYER_ENTERING_WORLD", "ACTIONBAR_SLOT_CHANGED", "ACTIONBAR_PAGE_CHANGED",
     "DISPLAY_SIZE_CHANGED", "UI_SCALE_CHANGED", "PLAYER_REGEN_ENABLED",
     "ACTIONBAR_UPDATE_COOLDOWN", "ACTIONBAR_UPDATE_USABLE", "BAG_UPDATE_DELAYED",
     "SPELLS_CHANGED", "UPDATE_BONUS_ACTIONBAR", "UPDATE_OVERRIDE_ACTIONBAR",
@@ -838,8 +903,14 @@ end
 events:SetScript("OnEvent", function(_, event)
     if event == "PLAYER_LOGIN" then
         loadPreferences()
+    elseif event == "PLAYER_LOGOUT" then
+        checkpointPreferences()
     elseif event == "PLAYER_ENTERING_WORLD" then
         if not preferences then loadPreferences() end
+        if confirmSaved then
+            confirmSaved = nil
+            saveFeedback(german and "Arc-Belegung gespeichert." or "Arc layout saved.")
+        end
         C_Timer.After(0, function()
             if InCombatLockdown() then
                 pendingRefresh = true
@@ -850,6 +921,8 @@ events:SetScript("OnEvent", function(_, event)
             refreshSlots()
         end)
     elseif event == "PLAYER_REGEN_ENABLED" then
+        flushSave()
+        if not activeEditBox then restoreChat() end
         installBindings()
         layoutHUD()
         if pendingRefresh then queueRefresh() end
@@ -868,6 +941,9 @@ events:SetScript("OnEvent", function(_, event)
 end)
 
 if EventRegistry then
-    EventRegistry:RegisterCallback("EditMode.Enter", function() C_Timer.After(0, updateDesktopBars) end, events)
+    EventRegistry:RegisterCallback("EditMode.Enter", function()
+        restoreChat()
+        C_Timer.After(0, updateDesktopBars)
+    end, events)
     EventRegistry:RegisterCallback("EditMode.Exit", function() C_Timer.After(0, layoutHUD) end, events)
 end
