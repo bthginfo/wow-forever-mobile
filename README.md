@@ -4,10 +4,10 @@
 
 | APK | Devices |
 | --- | --- |
-| [Standard .17 Standalone](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.17/WoW-Forever-Mobile-2.4.4-mobile.17-Standalone.apk) | Snapdragon 8 series with Adreno 7xx or 8xx |
-| [Pixel 9 and 10 · .17-pixel.1](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.17/WoW-Forever-Mobile-2.4.4-mobile.17-Pixel.apk) | Pixel 9 and 10 models listed below |
+| [Standard .18 Standalone](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.18/WoW-Forever-Mobile-2.4.4-mobile.18-Standalone.apk) | Snapdragon 8 series with Adreno 7xx or 8xx |
+| [Pixel 9 and 10 · .18-pixel.1](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.18/WoW-Forever-Mobile-2.4.4-mobile.18-Pixel.apk) | Pixel 9 and 10 models listed below |
 
-**Android 10+ · ARM64** · [Release notes](https://github.com/bthginfo/wow-forever-mobile/releases/tag/v2.4.4-mobile.17)
+**Android 10+ · ARM64** · [Release notes](https://github.com/bthginfo/wow-forever-mobile/releases/tag/v2.4.4-mobile.18)
 
 An Android launcher and touch interface for Blizzard’s Windows ARM64 WoW Forever client. The launcher runs the client on the phone using Wine/Proton. It includes a browser-based Battle.net login, Android keyboard and clipboard controls, and a configurable in-game touch HUD.
 
@@ -52,9 +52,9 @@ WoW Forever/
 
 The launcher downloads the matching `_forever_/Wow-ARM64.exe` from Blizzard when needed. A fresh setup downloads the ARM64 client and archive indexes first. WoW caches additional zones and assets as you play.
 
-### Standard .17 Standalone
+### Update from .17
 
-The standard .17 APK appears as **WoW Forever Mobile Standalone** and installs alongside the older .15 app with its own settings. If you have .16 Standalone, Android requires a fresh installation because .17 uses a different signing key. Before uninstalling .16, keep your WoW folder, including `_forever_/WTF` for character settings and arc layouts, in shared storage. After installing .17, grant storage access and select the folder with **Find existing game files**. [Previous .16 release](https://github.com/bthginfo/wow-forever-mobile/releases/tag/v2.4.4-mobile.16)
+Both .18 APKs use a new test signing key. Android requires a fresh installation when moving from .17. Before removing .17, keep your WoW folder, including `_forever_/WTF` for character settings and arc layouts, in shared storage. After installing .18, grant storage access and select the folder with **Find existing game files**. The Standard APK appears as **WoW Forever Mobile Standalone**. [Previous .17 release](https://github.com/bthginfo/wow-forever-mobile/releases/tag/v2.4.4-mobile.17)
 
 ### Pixel 9 and 10
 
@@ -67,7 +67,7 @@ Use the **Pixel 9 and 10** APK for these models. The app selects the Android Vul
 
 A player confirmed the game starts on **Pixel 9 Pro XL with Android 17** using .16-pixel.5. Pixel 10 support is experimental and still needs an on-device game test.
 
-The APK appears as **WoW Forever Mobile Pixel Test** and supports updating from .16-pixel.5. It can be installed alongside the standard app. After granting storage access, use **Find existing game files** to reuse your WoW folder. Close the other launcher before starting WoW from the same folder.
+The APK appears as **WoW Forever Mobile Pixel Test** and can be installed alongside the standard app. Close the other launcher before starting WoW from the same folder.
 
 The Pixel build checks Direct3D 11 before opening Battle.net sign-in. If the graphics check fails, open **Startup and connection** and tap **Copy** to share the selected graphics profile, error code and available DXVK messages.
 
@@ -96,6 +96,8 @@ The touch overlay translates Android gestures into keyboard and mouse input for 
 
 Open **More controls → Edit skills → Add set**. Each set has its own left and right arc for spells and usable items. Tap **+** on an arc to add a slot, use **‹** and **›** to edit the other sets, and tap **Save**. With two or more sets, the **Set 1 / 2** button at the bottom of the HUD cycles through them during play. Your existing arc layout becomes **Set 1**. Sets are saved per character.
 
+Starting with .18, spell and item icons show a circular cooldown sweep and the remaining time. Brief cooldowns under two seconds show the sweep alone. Spells with charges show the time until the next charge while recharging.
+
 Starting with .16, saving skill changes outside combat briefly reloads the WoW interface to write the layout to disk. If you save during combat, log out through WoW or use `/reload` afterward to write it to disk.
 
 ### Tablets and fullscreen
@@ -119,7 +121,7 @@ Fullscreen is on by default. Open **More controls** in the game toolbar to enter
 
 ## Build from source
 
-The [source for both .17 APKs](https://github.com/bthginfo/wow-forever-mobile/tree/v2.4.4-mobile.17) has its own build instructions and Forever Touch tests.
+The [source for both .18 APKs](https://github.com/bthginfo/wow-forever-mobile/tree/v2.4.4-mobile.18) has its own build instructions and Forever Touch tests.
 
 Use JDK 17, Android SDK Platform 36, build-tools 35.0.0, and NDK 27.3.13750724. Point `local.properties` at your Android SDK. For a fresh checkout, build the ARM64 Wine login helper into `app/src/main/assets/wow-session-bridge.exe`. [Helper build and test instructions](tools/wow-session-bridge/README.md)
 
