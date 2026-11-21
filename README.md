@@ -9,6 +9,8 @@
 
 **Android 10+ · ARM64** · [.24 release notes](https://github.com/bthginfo/wow-forever-mobile/releases/tag/v2.4.4-mobile.24-preview)
 
+The original **Google Pixel Fold (2023)** has a separate test build that uses the Mali system Vulkan driver. Install it alongside the regular Pixel app and select your existing WoW folder. Testing on a physical Pixel Fold is pending. [Download the Fold test APK](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.24-pixel.1-fold-test.1/WoW-Forever-Pixel-Fold-Test.apk)
+
 An Android launcher and touch interface for Blizzard’s Windows ARM64 WoW Forever client. The launcher runs the client on the phone using Wine/Proton. It includes a browser-based Battle.net login, Android keyboard and clipboard controls, and a configurable in-game touch HUD.
 
 ## What runs on the device
@@ -25,7 +27,7 @@ This is an unofficial launcher for players with access to WoW Forever through th
 
 ## Requirements
 
-- A 64-bit device that matches one of the two APKs above. The runtime is designed for Android 10 and later.
+- A 64-bit device supported by your chosen APK. The runtime is designed for Android 10 and later.
 - Several GB of free internal space for the app and its Wine environment. The game folder can grow past 50 GB as it caches more data.
 - A Battle.net account with access to WoW Forever. Install the Battle.net Android app if you use its Authenticator.
 - Wi-Fi for the first download. A computer is optional for players who already have game files to copy.
