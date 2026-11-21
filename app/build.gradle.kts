@@ -47,15 +47,15 @@ android {
             else -> "app.wowforever.mobile.browser"
         }
 
-        // Test APKs install alongside the matching signed production edition.
+        // Keep this suffix for updates to the preview first shipped as .22.
         if (previewBuild) applicationIdSuffix = ".preview22"
 
         minSdk = 26
 
         manifestPlaceholders["screenOrientation"] = "unspecified"
         manifestPlaceholders["mobileAppLabel"] = when {
-            previewBuild && pixelVulkanTestBuild -> "WoW Forever Pixel Preview 22"
-            previewBuild -> "WoW Forever Preview 22"
+            previewBuild && pixelVulkanTestBuild -> "WoW Forever Pixel Preview"
+            previewBuild -> "WoW Forever Preview"
             pixelVulkanTestBuild -> "WoW Forever Mobile Pixel Test"
             standaloneBuild -> "WoW Forever Mobile Standalone"
             else -> "@string/mobile_app_name"
@@ -63,8 +63,8 @@ android {
         buildConfigField("boolean", "XR_BUILD", "false")
         buildConfigField("boolean", "PIXEL_VULKAN_TEST", pixelVulkanTestBuild.toString())
 
-        versionCode = if (pixelVulkanTestBuild) 271 else 267
-        versionName = if (pixelVulkanTestBuild) "2.4.4-mobile.22-pixel.1" else "2.4.4-mobile.22"
+        versionCode = if (pixelVulkanTestBuild) 272 else 268
+        versionName = if (pixelVulkanTestBuild) "2.4.4-mobile.23-pixel.1" else "2.4.4-mobile.23"
 
         buildConfigField("boolean", "GOLD", "false")
         val iconValue = "@mipmap/ic_launcher"

@@ -24,7 +24,7 @@ local shade = editShield:CreateTexture(nil, "BACKGROUND")
 shade:SetAllPoints()
 shade:SetColorTexture(.07, .05, .03, .32)
 local picker = addon.createSlotPicker(editShield)
-local activeEditBox, chatDock
+local activeEditBox, typingChatLayout, defaultChatLayout, editModeChatLayout
 
 local groups = {}
 for _, side in ipairs(SIDES) do
@@ -694,23 +694,64 @@ local function restorePoints(frame, points)
     for _, point in ipairs(points) do frame:SetPoint(unpack(point, 1, 5)) end
 end
 
-local function restoreChat()
-    if not chatDock then return end
-    local frame = chatDock.frame
-    if InCombatLockdown() and frame:IsProtected() then return end
-    restorePoints(frame, chatDock.points)
-    frame:SetSize(chatDock.width, chatDock.height)
-    chatDock = nil
+local function canMoveChat(frame)
+    return frame and not frame:IsForbidden() and not (InCombatLockdown() and frame:IsProtected())
+end
+
+local function captureChat(frame)
+    return { frame = frame, points = framePoints(frame), width = frame:GetWidth(), height = frame:GetHeight() }
+end
+
+local function restoreChat(layout)
+    if not layout then return end
+    local frame = layout.frame
+    if not canMoveChat(frame) then return layout end
+    restorePoints(frame, layout.points)
+    frame:SetSize(layout.width, layout.height)
+end
+
+local function sameChatLayout(layout)
+    local frame, points = layout.frame, layout.points
+    if frame:GetWidth() ~= layout.width or frame:GetHeight() ~= layout.height
+            or frame:GetNumPoints() ~= #points then return false end
+    for index, saved in ipairs(points) do
+        local point, relative, relativePoint, x, y = frame:GetPoint(index)
+        if point ~= saved[1] or relative ~= saved[2] or relativePoint ~= saved[3]
+                or x ~= saved[4] or y ~= saved[5] then return false end
+    end
+    return true
+end
+
+local function positionChat(frame, widthFraction)
+    local height = UIParent:GetHeight()
+    local x, y, width, panelHeight = height * .075, -height * .225, height * widthFraction, height * .155
+    if frame:GetNumPoints() == 1 then
+        local point, relative, relativePoint, currentX, currentY = frame:GetPoint()
+        if point == "TOPLEFT" and relative == UIParent and relativePoint == "TOPLEFT"
+                and math.abs((currentX or 0) - x) < .1 and math.abs((currentY or 0) - y) < .1
+                and math.abs(frame:GetWidth() - width) < .1 and math.abs(frame:GetHeight() - panelHeight) < .1 then
+            return
+        end
+    end
+    frame:ClearAllPoints()
+    frame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", x, y)
+    frame:SetSize(width, panelHeight)
+end
+
+local function dockDefaultChat()
+    local frame = DEFAULT_CHAT_FRAME
+    if not preferences or preferences.useSavedChatLayout or not canMoveChat(frame) then return end
+    if EditModeManagerFrame and EditModeManagerFrame:IsEditModeActive() then return end
+    if typingChatLayout and typingChatLayout.frame == frame then return end
+    defaultChatLayout = defaultChatLayout or captureChat(frame)
+    positionChat(frame, .61)
 end
 
 local function dockChatForTyping(frame)
-    if chatDock or not frame or (InCombatLockdown() and frame:IsProtected()) then return end
+    if not canMoveChat(frame) then return end
     if EditModeManagerFrame and EditModeManagerFrame:IsEditModeActive() then return end
-    chatDock = { frame = frame, points = framePoints(frame), width = frame:GetWidth(), height = frame:GetHeight() }
-    local height = UIParent:GetHeight()
-    frame:ClearAllPoints()
-    frame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", height * .075, -height * .225)
-    frame:SetSize(height * .82, height * .155)
+    typingChatLayout = typingChatLayout or captureChat(frame)
+    positionChat(frame, .82)
 end
 
 local desktopBarNames = {
@@ -781,6 +822,7 @@ local function layoutHUD()
     if InCombatLockdown() then return end
     local height = UIParent:GetHeight()
     updateDesktopBars()
+    dockDefaultChat()
 
     -- Leave room below quests for the right thumb arc even after WoW refreshes the tracker.
     local tracker = ObjectiveTrackerFrame
@@ -836,6 +878,21 @@ end)
 chatControl("↑", 599, 4, 58, function(editBox) editBox.chatFrame:PageUp() end)
 chatControl("↓", 599, 56, 58, function(editBox) editBox.chatFrame:PageDown() end)
 
+local function layoutChatInput(editBox)
+    if not canMoveChat(editBox) then return end
+    local height = UIParent:GetHeight()
+    dockChatForTyping(editBox.chatFrame or DEFAULT_CHAT_FRAME)
+    editBox:ClearAllPoints()
+    editBox:SetPoint("TOPLEFT", UIParent, "TOPLEFT", height * .075, -height * .147)
+    editBox:SetWidth(height * .93)
+    if FCF_FadeInChatFrame then FCF_FadeInChatFrame(editBox.chatFrame or DEFAULT_CHAT_FRAME) end
+    chatControls:SetScale(height / DESIGN_HEIGHT)
+    chatControls:ClearAllPoints()
+    chatControls:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 54, -162)
+    updateChatChannels()
+    chatControls:Show()
+end
+
 local chatButton = CreateFrame("Button", "ForeverTouchOpenChat", UIParent)
 chatButton:SetSize(1, 1)
 chatButton:SetPoint("TOPLEFT", UIParent, "TOPLEFT", -10, 10)
@@ -864,20 +921,11 @@ chatButton:SetScript("OnClick", function()
             self.foreverTouchOriginalPoints = nil
             activeEditBox = nil
             chatControls:Hide()
-            restoreChat()
+            typingChatLayout = restoreChat(typingChatLayout)
+            dockDefaultChat()
         end)
     end
-    local height = UIParent:GetHeight()
-    dockChatForTyping(editBox.chatFrame or DEFAULT_CHAT_FRAME)
-    editBox:ClearAllPoints()
-    editBox:SetPoint("TOPLEFT", UIParent, "TOPLEFT", height * .075, -height * .147)
-    editBox:SetWidth(height * .93)
-    if FCF_FadeInChatFrame then FCF_FadeInChatFrame(editBox.chatFrame) end
-    chatControls:SetScale(height / DESIGN_HEIGHT)
-    chatControls:ClearAllPoints()
-    chatControls:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 54, -162)
-    updateChatChannels()
-    chatControls:Show()
+    layoutChatInput(editBox)
 end)
 
 refreshSlots = function()
@@ -913,19 +961,22 @@ refreshSlots = function()
     switcher:SetAttribute("pageCount", #livePages)
     local samePage = switcher:GetAttribute("page") == activeIndex
     switcher:SetAttribute("page", activeIndex)
-    if samePage then refreshLiveButtons(true) end
+    if samePage then refreshLiveButtons(true, true) end
     switcher:SetText(setLabel(activeIndex, #livePages))
     switcher:SetShown(#livePages > 1)
     layoutActions()
+    return true
 end
 
-refreshLiveButtons = function(updateIcon)
+refreshLiveButtons = function(updateIcon, updateCooldown)
     local index = switcher:GetAttribute("page")
     local page = livePages and livePages[index]
     if not page then return end
     local liveGroups = actionPages[index].groups
     for _, side in ipairs(SIDES) do
-        for slot = 1, #page.slots[side] do Actions.refresh(liveGroups[side].buttons[slot], desktopRecords, updateIcon) end
+        for slot = 1, #page.slots[side] do
+            Actions.refresh(liveGroups[side].buttons[slot], desktopRecords, updateIcon, updateCooldown)
+        end
     end
 end
 
@@ -938,7 +989,7 @@ switcher:HookScript("OnAttributeChanged", function(_, name, index)
         checkpointPreferences()
     end
     switcher:SetText(setLabel(index, #livePages))
-    refreshLiveButtons(true)
+    refreshLiveButtons(true, true)
 end)
 
 local function installBindings()
@@ -964,30 +1015,27 @@ local function installBindings()
     SetOverrideBinding(events, false, "SPACE", "JUMP")
 end
 
-local function queueRefresh()
+local queuedRebind, queuedLive, queuedIcons, queuedTimers = false, false, false, false
+local function queueRefresh(rebind, updateIcon, updateCooldown)
+    queuedRebind = queuedRebind or rebind
+    queuedLive = queuedLive or not rebind
+    queuedIcons = queuedIcons or updateIcon
+    queuedTimers = queuedTimers or updateCooldown
     if refreshQueued then return end
     refreshQueued = true
     C_Timer.After(0, function()
+        local rebindNow, liveNow, icons, timers = queuedRebind, queuedLive, queuedIcons, queuedTimers
         refreshQueued = false
-        refreshSlots()
-    end)
-end
-
-local liveQueued, updateIcons = false, false
-local function queueLiveRefresh(includeIcons)
-    updateIcons = updateIcons or includeIcons
-    if liveQueued then return end
-    liveQueued = true
-    C_Timer.After(0, function()
-        local icons = updateIcons
-        liveQueued, updateIcons = false, false
-        refreshLiveButtons(icons)
+        queuedRebind, queuedLive, queuedIcons, queuedTimers = false, false, false, false
+        if rebindNow and refreshSlots() then return end
+        if liveNow then refreshLiveButtons(icons, timers) end
     end)
 end
 
 for _, event in ipairs({
     "GROUP_ROSTER_UPDATE", "PLAYER_GUILD_UPDATE", "PLAYER_LOGIN", "PLAYER_LOGOUT", "PLAYER_ENTERING_WORLD", "ACTIONBAR_SLOT_CHANGED", "ACTIONBAR_PAGE_CHANGED",
-    "DISPLAY_SIZE_CHANGED", "UI_SCALE_CHANGED", "PLAYER_REGEN_ENABLED",
+    "DISPLAY_SIZE_CHANGED", "UI_SCALE_CHANGED", "PLAYER_REGEN_ENABLED", "EDIT_MODE_LAYOUTS_UPDATED",
+    "PLAYER_SPECIALIZATION_CHANGED",
     "ACTIONBAR_UPDATE_COOLDOWN", "ACTIONBAR_UPDATE_USABLE", "BAG_UPDATE_DELAYED",
     "SPELLS_CHANGED", "UPDATE_BONUS_ACTIONBAR", "UPDATE_OVERRIDE_ACTIONBAR",
     "SPELL_UPDATE_COOLDOWN", "SPELL_UPDATE_CHARGES", "SPELL_UPDATE_USABLE", "BAG_UPDATE_COOLDOWN",
@@ -999,6 +1047,8 @@ events:SetScript("OnEvent", function(_, event)
     if event == "PLAYER_LOGIN" then
         loadPreferences()
     elseif event == "PLAYER_LOGOUT" then
+        typingChatLayout = restoreChat(typingChatLayout)
+        defaultChatLayout = restoreChat(defaultChatLayout)
         checkpointPreferences()
     elseif event == "PLAYER_ENTERING_WORLD" then
         if not preferences then loadPreferences() end
@@ -1017,30 +1067,52 @@ events:SetScript("OnEvent", function(_, event)
         end)
     elseif event == "PLAYER_REGEN_ENABLED" then
         flushSave()
-        if not activeEditBox then restoreChat() end
+        if activeEditBox then
+            layoutChatInput(activeEditBox)
+        else
+            typingChatLayout = restoreChat(typingChatLayout)
+        end
         installBindings()
         layoutHUD()
-        if pendingRefresh then queueRefresh() end
+        if pendingRefresh then queueRefresh(true) end
     elseif event == "GROUP_ROSTER_UPDATE" or event == "PLAYER_GUILD_UPDATE" then
         if activeEditBox then updateChatChannels() end
     elseif event == "DISPLAY_SIZE_CHANGED" or event == "UI_SCALE_CHANGED" then
         layoutHUD()
-    elseif event == "ACTIONBAR_UPDATE_COOLDOWN" or event == "ACTIONBAR_UPDATE_USABLE" or event == "BAG_UPDATE_DELAYED"
-            or event == "SPELL_UPDATE_COOLDOWN" or event == "SPELL_UPDATE_CHARGES" or event == "SPELL_UPDATE_USABLE"
-            or event == "BAG_UPDATE_COOLDOWN" then
-        queueLiveRefresh(false)
+        if activeEditBox then layoutChatInput(activeEditBox) end
+    elseif event == "EDIT_MODE_LAYOUTS_UPDATED" or event == "PLAYER_SPECIALIZATION_CHANGED" then
+        C_Timer.After(0, dockDefaultChat)
+    elseif event == "ACTIONBAR_UPDATE_USABLE" or event == "SPELL_UPDATE_USABLE" then
+        queueRefresh(false, false, false)
+    elseif event == "ACTIONBAR_UPDATE_COOLDOWN" or event == "BAG_UPDATE_DELAYED" or event == "SPELL_UPDATE_COOLDOWN"
+            or event == "SPELL_UPDATE_CHARGES" or event == "BAG_UPDATE_COOLDOWN" then
+        queueRefresh(false, false, true)
     elseif event == "ACTIONBAR_SLOT_CHANGED" and InCombatLockdown() then
         pendingRefresh = true
-        queueLiveRefresh(true)
+        queueRefresh(false, true, true)
     elseif preferences then
-        queueRefresh()
+        queueRefresh(true)
     end
 end)
 
 if EventRegistry then
     EventRegistry:RegisterCallback("EditMode.Enter", function()
-        restoreChat()
+        typingChatLayout = restoreChat(typingChatLayout)
+        defaultChatLayout = restoreChat(defaultChatLayout)
+        local frame = DEFAULT_CHAT_FRAME
+        editModeChatLayout = canMoveChat(frame) and captureChat(frame) or nil
         C_Timer.After(0, updateDesktopBars)
     end, events)
-    EventRegistry:RegisterCallback("EditMode.Exit", function() C_Timer.After(0, layoutHUD) end, events)
+    EventRegistry:RegisterCallback("EditMode.SavedLayouts", function()
+        if preferences and not preferences.useSavedChatLayout and editModeChatLayout
+                and not sameChatLayout(editModeChatLayout) then
+            preferences.useSavedChatLayout = true
+            preferences.revision = preferenceRevision(preferences) + 1
+            checkpointPreferences()
+        end
+    end, events)
+    EventRegistry:RegisterCallback("EditMode.Exit", function()
+        editModeChatLayout = nil
+        C_Timer.After(0, layoutHUD)
+    end, events)
 end

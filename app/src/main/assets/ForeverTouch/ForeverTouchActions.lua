@@ -163,7 +163,15 @@ local function setNumericCooldown(frame, start, duration, rate)
     if isSecret(start) or isSecret(duration) or isSecret(rate)
             or number(start) <= 0 or number(duration) <= 0 then return false end
     local speed = number(rate)
-    frame:SetCooldown(start, duration, speed > 0 and speed or 1)
+    speed = speed > 0 and speed or 1
+    if frame.foreverTouchCooldownStart ~= start or frame.foreverTouchCooldownDuration ~= duration
+            or frame.foreverTouchCooldownRate ~= speed then
+        frame:SetCooldown(start, duration, speed)
+        frame.foreverTouchCooldownStart = start
+        frame.foreverTouchCooldownDuration = duration
+        frame.foreverTouchCooldownRate = speed
+    end
+    frame.foreverTouchHasCooldown = true
     return true
 end
 
@@ -173,6 +181,8 @@ local function setDurationCooldown(frame, getDuration, id)
     if isSecret(duration) or not duration then return false end
     -- WoW can render the opaque timer even when Lua cannot read the underlying seconds.
     frame:SetCooldownFromDurationObject(duration, true)
+    frame.foreverTouchCooldownStart = nil
+    frame.foreverTouchHasCooldown = true
     return true
 end
 
@@ -194,10 +204,14 @@ local function refreshCooldown(frame, source, id, charges)
                     and setNumericCooldown(frame, start, duration, rate) then return end
         end
     end
-    frame:Clear()
+    if frame.foreverTouchHasCooldown then
+        frame:Clear()
+        frame.foreverTouchCooldownStart = nil
+        frame.foreverTouchHasCooldown = false
+    end
 end
 
-function Actions.refresh(button, records, updateIcon)
+function Actions.refresh(button, records, updateIcon, updateCooldown)
     local binding = button.binding
     if not binding then return end
     if updateIcon then button.icon:SetTexture(Actions.texture(binding, records)) end
@@ -226,22 +240,32 @@ function Actions.refresh(button, records, updateIcon)
     count = number(count)
     local knownCharges = charges and number(charges.maxCharges) > 1
         and not isSecret(charges.currentCharges) and type(charges.currentCharges) == "number"
-    if knownCharges then
-        button.count:SetText(charges.currentCharges)
-    else
-        button.count:SetText((itemCountKnown or count > 1) and count or "")
+    local countText = (itemCountKnown or count > 1) and count or ""
+    if knownCharges then countText = charges.currentCharges end
+    if button.foreverTouchCount ~= countText then
+        button.count:SetText(countText)
+        button.foreverTouchCount = countText
     end
-    refreshCooldown(button.cooldown, source, id, charges)
+    if updateCooldown then refreshCooldown(button.cooldown, source, id, charges) end
+
     -- A partly recharged spell can still be cast. Keep its icon legible under the swipe.
-    local canSpendCharge = knownCharges and charges.currentCharges > 0
-    button.cooldown:SetSwipeColor(0, 0, 0, canSpendCharge and .30 or .76)
-    if not isSecret(noPower) and noPower then
-        button.icon:SetVertexColor(.46, .62, .97)
-    else
-        local unavailable = (not isSecret(usable) and usable == false)
-            or (itemCountKnown and count == 0) or (knownCharges and charges.currentCharges == 0)
-        local intensity = unavailable and .42 or 1
-        button.icon:SetVertexColor(intensity, intensity, intensity)
+    local swipeAlpha = knownCharges and charges.currentCharges > 0 and .30 or .76
+    if button.foreverTouchSwipeAlpha ~= swipeAlpha then
+        button.cooldown:SetSwipeColor(0, 0, 0, swipeAlpha)
+        button.foreverTouchSwipeAlpha = swipeAlpha
+    end
+
+    local unavailable = (not isSecret(usable) and usable == false)
+        or (itemCountKnown and count == 0) or (knownCharges and charges.currentCharges == 0)
+    local tint = not isSecret(noPower) and noPower and "power" or unavailable and "unavailable" or "ready"
+    if button.foreverTouchTint ~= tint then
+        if tint == "power" then
+            button.icon:SetVertexColor(.46, .62, .97)
+        else
+            local intensity = unavailable and .42 or 1
+            button.icon:SetVertexColor(intensity, intensity, intensity)
+        end
+        button.foreverTouchTint = tint
     end
 end
 

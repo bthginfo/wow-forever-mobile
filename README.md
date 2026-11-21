@@ -85,7 +85,7 @@ The Pixel build checks Direct3D 11 before opening Battle.net sign-in. If the gra
 | Toolbar arrow | Minimizes the toolbar to one button. Tap it to show the shortcuts again. |
 | More controls → Edit controls | Moves the sticks, shortcuts, or toolbar |
 | More controls → Edit skills | Assigns spells and usable bag items, swaps slots by dragging, and moves the arcs by their handles |
-| Professions · Social · More controls | In .22, Professions opens directly, Social contains Friends, Guild and Group Finder, and More controls contains Collections. In .21 all five panels are under More controls. |
+| Professions · Social · More controls | In the preview, Professions opens directly, Social contains Friends, Guild and Group Finder, and More controls contains Collections. In .21 all five panels are under More controls. |
 | More controls → Camera sensitivity | Sets how quickly the camera turns |
 | More controls → Enter or exit fullscreen | Hides or shows the Android status and navigation bars |
 | More controls → Text input | Opens the Android keyboard and paste controls for the game |
@@ -93,11 +93,11 @@ The Pixel build checks Direct3D 11 before opening Battle.net sign-in. If the gra
 
 The touch overlay translates Android gestures into keyboard and mouse input for the game window. Forever Touch reads populated action slots and keeps a per-character mobile layout in its own add-on saved variables. Use **Edit skills** to set up the mobile spell and item buttons.
 
-### Mobile .22 preview
+### Update the .22 preview to .23
 
-The .22 preview uses separate Android package IDs so .21 can stay installed. Choose the **Pixel Preview** for Pixel 9 and 10 or the **Standalone Preview** for supported Adreno devices. In the preview, select **Find existing game files** and choose your existing WoW folder. Both launchers use that folder's game data and character settings. Close one before starting the other.
+Install the matching .23 APK over .22 Preview to keep your launcher and game settings. Use **Pixel Preview** for Pixel 9 and 10 or **Standalone Preview** for supported Adreno devices. The preview can also be installed alongside .21. On a fresh preview installation, use **Find existing game files** to select the existing WoW folder.
 
-## Mobile HUD in .22
+## Mobile HUD in the preview
 
 **Chat** opens the game chat. **Latest** jumps to the most recent line. **Character** and **Professions** have direct toolbar buttons. **Social** opens Friends, Guild and Group Finder. Swipe the toolbar horizontally on narrow screens.
 
@@ -115,7 +115,7 @@ Arc edits apply as soon as you make them. Tap **Done** or use Android Back to cl
 
 To bind a learned entry such as Smelting or Fishing, open **More controls → Edit skills**, tap **+** and choose **Professions** in the slot picker.
 
-Move the chat frame in WoW’s **Edit Mode** and save that WoW layout. When you open the mobile keyboard, chat temporarily moves above it and returns to your saved position when you finish typing.
+Chat opens in the upper-left corner. The chat panel widens while you type. To place it somewhere else, move the chat frame in WoW’s **Edit Mode** and save the layout.
 
 ### Tablets and fullscreen
 

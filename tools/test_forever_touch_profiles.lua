@@ -83,7 +83,10 @@ local methods = {
 }
 
 local function noop() end
-local frameType = { __index = function(_, key) return methods[key] or noop end }
+local frameType = { __index = function(_, key)
+    if key:match("^foreverTouch") then return nil end
+    return methods[key] or noop
+end }
 function CreateFrame(_, name, parent, template)
     local frame = setmetatable({
         name = name, parent = parent, shown = true, scripts = {}, attributes = {}, refs = {},
@@ -127,6 +130,7 @@ EventRegistry = { RegisterCallback = function(_, key, callback) callbacks[key] =
 local secret = setmetatable({}, { __index = function() error("A restricted value must not be indexed") end })
 function issecretvalue(value) return rawequal(value, secret) end
 
+local cooldownInfoForTest
 local actionTimers, spellTimers, spellInfo, chargeTimers, chargeInfo, itemTimers = {}, {}, {}, {}, {}, {}
 C_ActionBar = {
     GetActionCooldownDuration = function(slot) return actionTimers[slot] end,
@@ -140,6 +144,7 @@ C_Spell = {
 }
 C_Item = {
     GetItemCooldown = function(id)
+        if cooldownInfoForTest then cooldownInfoForTest() end
         local timer = itemTimers[id]
         if timer then return timer.start, timer.duration, timer.enabled end
     end,
@@ -543,12 +548,14 @@ login(nil, nil, account, { name = "Miner", realm = "Other Realm" })
 assert(not frames.ForeverTouchLeftAction1, "the same character name on another realm must not share a profile")
 
 local chat = DEFAULT_CHAT_FRAME
-chat:ClearAllPoints()
-chat:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -45, -110)
-chat:SetSize(390, 142)
-callbacks["EditMode.Exit"]()
-event(nil, "UI_SCALE_CHANGED")
-assert(chat:GetPoint() == "TOPRIGHT" and chat:GetWidth() == 390, "the game owns the saved chat position")
+local function assertTopLeft(frame, y)
+    local point, relative, relativePoint, x, offset = frame:GetPoint()
+    assert(point == "TOPLEFT" and relative == UIParent and relativePoint == "TOPLEFT"
+        and x > 0 and math.abs(offset - y) < .001, "chat should use the upper-left corner")
+end
+
+assertTopLeft(chat, -162)
+local idleWidth, idleHeight = chat:GetSize()
 local entry = CreateFrame("EditBox", nil, UIParent)
 entry:SetSize(390, 28)
 entry:SetPoint("TOP", chat, "BOTTOM", 0, -3)
@@ -557,11 +564,56 @@ entry.foreverTouchOriginalPoints, entry.foreverTouchHooks = false, false
 entry.HasFocus = function() return true end
 ChatFrameUtil = { GetActiveWindow = function() return entry end, OpenChat = function() return entry end }
 click("OpenChat")
-assert(chat:GetPoint() == "TOPLEFT" and entry:GetPoint() == "TOPLEFT", "typing temporarily brings chat above the keyboard")
+assertTopLeft(chat, -162)
+assertTopLeft(entry, -105.84)
+assert(chat:GetWidth() > idleWidth)
 entry.scripts.OnEditFocusLost(entry)
-local point, relative, relativePoint, x, y = chat:GetPoint()
-assert(point == "TOPRIGHT" and relative == UIParent and relativePoint == "TOPRIGHT" and x == -45 and y == -110)
-assert(chat:GetWidth() == 390 and chat:GetHeight() == 142 and entry:GetPoint() == "TOP")
+assertTopLeft(chat, -162)
+assert(chat:GetWidth() == idleWidth and chat:GetHeight() == idleHeight and entry:GetPoint() == "TOP")
+
+UIParent:SetSize(1920, 900)
+event(nil, "DISPLAY_SIZE_CHANGED")
+assertTopLeft(chat, -202.5)
+-- WoW may reapply its saved layout during a zone or layout change.
+chat:ClearAllPoints()
+chat:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 10, 20)
+event(nil, "EDIT_MODE_LAYOUTS_UPDATED")
+assertTopLeft(chat, -202.5)
+
+local editing = true
+EditModeManagerFrame = {IsEditModeActive = function() return editing end}
+callbacks["EditMode.Enter"]()
+assert(chat:GetPoint() == "BOTTOMLEFT", "WoW edit mode sees the game's real layout")
+callbacks["EditMode.SavedLayouts"]()
+editing = false
+callbacks["EditMode.Exit"]()
+assertTopLeft(chat, -202.5)
+assert(not ForeverTouchPreferences.useSavedChatLayout, "saving unrelated edits keeps the mobile default")
+
+editing = true
+callbacks["EditMode.Enter"]()
+chat:ClearAllPoints()
+chat:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -45, -110)
+callbacks["EditMode.SavedLayouts"]()
+editing = false
+callbacks["EditMode.Exit"]()
+event(nil, "UI_SCALE_CHANGED")
+assert(chat:GetPoint() == "TOPRIGHT" and ForeverTouchPreferences.useSavedChatLayout,
+    "a newly saved WoW chat position remains customizable")
+click("OpenChat")
+assertTopLeft(chat, -202.5)
+entry.scripts.OnEditFocusLost(entry)
+assert(chat:GetPoint() == "TOPRIGHT", "typing restores the explicitly saved chat position")
+EditModeManagerFrame = nil
+
+login(first)
+assertTopLeft(DEFAULT_CHAT_FRAME, -162)
+DEFAULT_CHAT_FRAME.protected = true
+combat = true
+event(nil, "DISPLAY_SIZE_CHANGED")
+combat = false
+event(nil, "PLAYER_REGEN_ENABLED")
+assertTopLeft(DEFAULT_CHAT_FRAME, -162)
 
 -- A secure set switch must be recoverable from the account snapshot during play.
 local twoSets = { revision = 8, mobileSlots = legacy.mobileSlots,
@@ -685,5 +737,56 @@ assert(control("3 / 3") and control("Spell 13").parent.binding.id == 13)
 picker:Open(function() end, "spell", {kind = "spell", id = 301})
 assert(control("Smelting").parent.binding.id == 301 and not control("Professions").enabled,
     "replacing a profession spell returns to learned profession actions")
+
+-- Repeated usable events can affect tint without changing any timers.
+local profile = {mobileSlots = {left = {{kind = "spell", id = 201}}, right = {{kind = "item", id = 501}}}}
+local refreshed = login(first, profile)
+local spellButton, itemButton = frames.ForeverTouchLeftAction1, frames.ForeverTouchRightAction1
+local writes, timerReads = 0, 0
+for _, button in ipairs({spellButton, itemButton}) do
+    local targets = {{button.icon, "SetVertexColor"}, {button.count, "SetText"}, {button.cooldown, "SetSwipeColor"},
+        {button.cooldown, "SetCooldown"}, {button.cooldown, "SetCooldownFromDurationObject"}, {button.cooldown, "Clear"}}
+    for _, pair in ipairs(targets) do
+        local frame, method = pair[1], pair[2]
+        local original = frame[method]
+        frame[method] = function(self, ...)
+            writes = writes + 1
+            return original(self, ...)
+        end
+    end
+end
+local getItemCooldown = cooldownInfoForTest
+cooldownInfoForTest = function() timerReads = timerReads + 1 end
+for _ = 1, 20 do event(nil, "SPELL_UPDATE_USABLE") end
+assert(writes == 0 and timerReads == 0, "unchanged usable events must avoid timer reads and visual writes")
+C_Spell.IsSpellUsable = function() return false, true end
+event(nil, "SPELL_UPDATE_USABLE")
+assert(writes == 1 and spellButton.icon.red == .46 and timerReads == 0)
+C_Spell.IsSpellUsable = nil
+
+-- Numeric timers do not restart their swipe unless the values change.
+itemTimers[501] = {start = 12, duration = 20, enabled = 1}
+event(nil, "BAG_UPDATE_COOLDOWN")
+assert(itemButton.cooldown.timer.start == 12 and itemButton.cooldown.timer.duration == 20)
+writes, timerReads = 0, 0
+for _ = 1, 20 do event(nil, "BAG_UPDATE_COOLDOWN") end
+assert(writes == 0 and timerReads == 20, "unchanged numeric timers keep running on the native widget")
+itemTimers[501].enabled = 0
+event(nil, "BAG_UPDATE_COOLDOWN")
+event(nil, "BAG_UPDATE_COOLDOWN")
+assert(writes == 1 and not rawget(itemButton.cooldown, "timer"), "a disabled timer clears once")
+cooldownInfoForTest = getItemCooldown
+
+local visits, timerCallbacks = 0, {}
+local oldRefresh = refreshed.actions.refresh
+refreshed.actions.refresh = function(...) visits = visits + 1; return oldRefresh(...) end
+C_Timer.After = function(_, run) timerCallbacks[#timerCallbacks + 1] = run end
+event(nil, "SPELL_UPDATE_USABLE")
+event(nil, "SPELLS_CHANGED")
+event(nil, "SPELL_UPDATE_COOLDOWN")
+assert(#timerCallbacks == 1 and visits == 0, "rebinding and refreshing share one next-frame callback")
+timerCallbacks[1]()
+assert(visits == 2, "rebinding updates each visible slot once")
+C_Timer.After = immediate
 
 print("Passed: arc autosave and recovery, saved switches, cooldowns and charges, item counts, event batching, picker paging, professions, chat and frame limiting.")
