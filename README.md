@@ -1,22 +1,13 @@
 # WoW Forever Mobile
 
-## Android downloads
+## Android downloads · .24 Preview
 
 | APK | Devices |
 | --- | --- |
-| [Standard .21 Standalone](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.21/WoW-Forever-Mobile-2.4.4-mobile.21-Standalone.apk) | Snapdragon 8 series with Adreno 7xx or 8xx |
-| [Pixel 9 and 10 · .21-pixel.1](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.21/WoW-Forever-Mobile-2.4.4-mobile.21-Pixel.apk) | Pixel 9 and 10 models listed below |
+| [Standard Android .24](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.24-preview/WoW-Forever-Mobile-2.4.4-mobile.24-Standalone-Preview.apk) | Snapdragon 8 series with Adreno 7xx or 8xx |
+| [Pixel 9 and 10 .24](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.24-preview/WoW-Forever-Mobile-2.4.4-mobile.24-Pixel-Preview.apk) | Pixel 9 and 10 families listed below |
 
-**Android 10+ · ARM64** · [GitHub release](https://github.com/bthginfo/wow-forever-mobile/releases/tag/v2.4.4-mobile.21)
-
-### Update to the .23 preview
-
-Install the matching .23 APK over .22 Preview to keep your launcher settings and WoW folder. Chat sits in the upper-left corner and the skill HUD skips repeated updates. For a fresh preview installation alongside .21, use **Find existing game files** to select your existing WoW folder.
-
-| Preview APK | Devices |
-| --- | --- |
-| [Standalone .23 preview](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.23-preview/WoW-Forever-Mobile-2.4.4-mobile.23-Standalone-Preview.apk) | Supported Snapdragon / Adreno devices |
-| [Pixel .23 preview](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.23-preview/WoW-Forever-Mobile-2.4.4-mobile.23-Pixel-Preview.apk) | Pixel 9 and Pixel 10 families |
+**Android 10+ · ARM64** · [.24 release notes](https://github.com/bthginfo/wow-forever-mobile/releases/tag/v2.4.4-mobile.24-preview)
 
 An Android launcher and touch interface for Blizzard’s Windows ARM64 WoW Forever client. The launcher runs the client on the phone using Wine/Proton. It includes a browser-based Battle.net login, Android keyboard and clipboard controls, and a configurable in-game touch HUD.
 
@@ -63,7 +54,7 @@ The launcher downloads the matching `_forever_/Wow-ARM64.exe` from Blizzard when
 
 ### Update an existing installation
 
-Install the .21 APK directly over the matching .19 or .20 edition. When moving from .18 or an earlier test build, Android requires a fresh installation because those editions use different signing keys. Keep your WoW folder and `_forever_/WTF` in shared storage, then select that folder with **Find existing game files**. [Previous .20 release](https://github.com/bthginfo/wow-forever-mobile/releases/tag/v2.4.4-mobile.20)
+Open the matching .24 APK over .23 Preview and choose **Update** in Android. Your launcher settings, WoW folder and skill arc setup carry over. If you have .21, the preview installs alongside it. Use **Find existing game files** and select your WoW folder. [.21 downloads](https://github.com/bthginfo/wow-forever-mobile/releases/tag/v2.4.4-mobile.21)
 
 ### Pixel 9 and 10
 
@@ -88,7 +79,7 @@ The Pixel build checks Direct3D 11 before opening Battle.net sign-in. If the gra
 | Right camera area | Drag to turn the camera |
 | Jump | Right-side shortcut |
 | Target, Interact | Right-side shortcuts on phones and left-side shortcuts in the tablet layout |
-| Chat | Opens chat with the Android keyboard. The chat toolbar includes Paste and Send. |
+| Chat / Write | Opens chat with the Android keyboard. The chat toolbar includes Paste and Send. |
 | Bags, Map, Character | Opens the corresponding WoW panel |
 | Talents, Quests, Spellbook | Opens the corresponding WoW panel |
 | Toolbar arrow | Minimizes the toolbar to one button. Tap it to show the shortcuts again. |
@@ -112,7 +103,7 @@ Arc edits apply as soon as you make them. Tap **Done** or use Android Back to cl
 
 To bind a learned entry such as Smelting or Fishing, open **More controls → Edit skills**, tap **+** and choose **Professions** in the slot picker.
 
-In .23, chat starts in the upper-left corner and widens while you type. To place it somewhere else, move the chat frame in WoW’s **Edit Mode** and save the layout.
+In .24, the **Chat** button sits directly to the left of the minimap. Tap it to show or hide the chat. A red dot on the collapsed button signals an incoming whisper. Open the chat to clear it. Use **Write** in the toolbar to bring up the keyboard.
 
 ### Tablets and fullscreen
 
@@ -135,7 +126,7 @@ Fullscreen is on by default. Open **More controls** in the game toolbar to enter
 
 ## Build from source
 
-The [source for both .21 APKs](https://github.com/bthginfo/wow-forever-mobile/tree/v2.4.4-mobile.21) has its own build instructions and Forever Touch tests.
+The [source for both .24 APKs](https://github.com/bthginfo/wow-forever-mobile/tree/v2.4.4-mobile.24-preview) has its own build instructions and Forever Touch tests.
 
 Use JDK 17, Android SDK Platform 36, build-tools 35.0.0, and NDK 27.3.13750724. Point `local.properties` at your Android SDK. For a fresh checkout, build the ARM64 Wine login helper into `app/src/main/assets/wow-session-bridge.exe`. [Helper build and test instructions](tools/wow-session-bridge/README.md)
 
