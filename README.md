@@ -9,14 +9,14 @@
 
 **Android 10+ · ARM64** · [GitHub release](https://github.com/bthginfo/wow-forever-mobile/releases/tag/v2.4.4-mobile.21)
 
-### Try the .22 preview
+### Update to the .23 preview
 
-The preview installs next to .21. Use **Find existing game files** to select the same WoW folder and close one edition before opening the other. The preview adds automatic arc checkpoints when switching sets, clearer charge and item counts, direct Character and Professions controls, a Social menu, and an optional 30 FPS limit.
+Install the matching .23 APK over .22 Preview to keep your launcher settings and WoW folder. Chat sits in the upper-left corner and the skill HUD skips repeated updates. For a fresh preview installation alongside .21, use **Find existing game files** to select your existing WoW folder.
 
 | Preview APK | Devices |
 | --- | --- |
-| [Standalone .22 preview](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.22-preview/WoW-Forever-Mobile-2.4.4-mobile.22-Standalone-Preview.apk) | Supported Snapdragon / Adreno devices |
-| [Pixel .22 preview](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.22-preview/WoW-Forever-Mobile-2.4.4-mobile.22-Pixel-Preview.apk) | Pixel 9 and Pixel 10 families |
+| [Standalone .23 preview](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.23-preview/WoW-Forever-Mobile-2.4.4-mobile.23-Standalone-Preview.apk) | Supported Snapdragon / Adreno devices |
+| [Pixel .23 preview](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.23-preview/WoW-Forever-Mobile-2.4.4-mobile.23-Pixel-Preview.apk) | Pixel 9 and Pixel 10 families |
 
 An Android launcher and touch interface for Blizzard’s Windows ARM64 WoW Forever client. The launcher runs the client on the phone using Wine/Proton. It includes a browser-based Battle.net login, Android keyboard and clipboard controls, and a configurable in-game touch HUD.
 
@@ -94,7 +94,7 @@ The Pixel build checks Direct3D 11 before opening Battle.net sign-in. If the gra
 | Toolbar arrow | Minimizes the toolbar to one button. Tap it to show the shortcuts again. |
 | More controls → Edit controls | Moves the sticks, shortcuts, or toolbar |
 | More controls → Edit skills | Assigns spells and usable bag items, swaps slots by dragging, and moves the arcs by their handles |
-| Professions · Social · More controls | In .22, Professions opens directly, Social contains Friends, Guild and Group Finder, and More controls contains Collections. In .21 all five panels are under More controls. |
+| Professions · Social · More controls | In the preview, Professions opens directly, Social contains Friends, Guild and Group Finder, and More controls contains Collections. In .21 all five panels are under More controls. |
 | More controls → Camera sensitivity | Sets how quickly the camera turns |
 | More controls → Enter or exit fullscreen | Hides or shows the Android status and navigation bars |
 | More controls → Text input | Opens the Android keyboard and paste controls for the game |
@@ -112,7 +112,7 @@ Arc edits apply as soon as you make them. Tap **Done** or use Android Back to cl
 
 To bind a learned entry such as Smelting or Fishing, open **More controls → Edit skills**, tap **+** and choose **Professions** in the slot picker.
 
-Move the chat frame in WoW’s **Edit Mode** and save that WoW layout. When you open the mobile keyboard, chat temporarily moves above it and returns to your saved position when you finish typing.
+In .23, chat starts in the upper-left corner and widens while you type. To place it somewhere else, move the chat frame in WoW’s **Edit Mode** and save the layout.
 
 ### Tablets and fullscreen
 
