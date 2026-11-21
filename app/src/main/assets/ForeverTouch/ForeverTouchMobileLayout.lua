@@ -41,6 +41,7 @@ local draft, selected, dragFrom, moving
 local refreshSlots, refreshLiveButtons, updateEditor
 local pendingRefresh, refreshQueued = false, false
 local pendingSave, saveQueued = false, false
+local staleSetBindings = false
 
 local switcher = CreateFrame("Button", "ForeverTouchCycleSet", UIParent, "UIPanelButtonTemplate,SecureHandlerClickTemplate")
 switcher:SetFrameStrata("HIGH")
@@ -170,8 +171,12 @@ local function actionButton(group, index)
     button.cooldown:SetDrawSwipe(true)
     button.cooldown:SetHideCountdownNumbers(false)
     button.cooldown:SetMinimumCountdownDuration(2000)
-    button.count = button:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
-    button.count:SetPoint("BOTTOMRIGHT", -3, 3)
+    local labels = CreateFrame("Frame", nil, button)
+    labels:SetAllPoints(button)
+    labels:SetFrameLevel(button.cooldown:GetFrameLevel() + 1)
+    labels:EnableMouse(false)
+    button.count = labels:CreateFontString(nil, "OVERLAY", "NumberFontNormal")
+    button.count:SetPoint("BOTTOMRIGHT", labels, "BOTTOMRIGHT", -3, 3)
     group.buttons[index] = button
     return button
 end
@@ -322,7 +327,7 @@ local function checkpointDraft()
     preferences.revision = preferenceRevision(preferences) + 1
     preferences.confirmArcSave = true
     checkpointPreferences()
-    draft.edited, pendingSave = true, true
+    draft.edited, pendingSave, staleSetBindings = true, true, true
 end
 
 local function swapSlots(first, second)
@@ -382,6 +387,8 @@ local function chooseBinding(side, index)
     local page = draft.pages[draft.index]
     local list = page.slots[side]
     local old = list[index]
+    local current = old
+    if old and old.kind == "desktop" then current = desktopRecords[old.key] end
     picker:Open(function(binding)
         if not draft or draft.pages[draft.index] ~= page then return end
         if not old or old.kind ~= binding.kind or old.id ~= binding.id then
@@ -391,7 +398,7 @@ local function chooseBinding(side, index)
         end
         selected = nil
         updateEditor()
-    end, old and (old.kind == "item" and "item" or "spell"))
+    end, current and (current.kind == "item" and "item" or "spell"), current)
 end
 
 local tools = CreateFrame("Frame", nil, editShield)
@@ -498,7 +505,9 @@ updateEditor = function()
         or (german and "Wähle einen Slot oder tippe auf +" or "Select a slot or tap +"))
     assign:SetEnabled(binding ~= nil)
     remove:SetEnabled(binding ~= nil)
-    setCaption:SetText(setLabel(draft.index, #draft.pages))
+    local caption = setLabel(draft.index, #draft.pages)
+    if draft.edited then caption = caption .. (german and " · Übernommen" or " · Applied") end
+    setCaption:SetText(caption)
     previousSet:SetEnabled(draft.index > 1)
     nextSet:SetEnabled(draft.index < #draft.pages)
     removeSet:SetEnabled(draft.index > 1)
@@ -569,6 +578,7 @@ local function openEditor()
         index = pageIndex(preferences.mobileArcPage, #pages),
         original = CopyTable(preferences),
         originalPendingSave = pendingSave,
+        originalStaleBindings = staleSetBindings,
     }
     setActionAlpha(0)
     updateEditor()
@@ -596,7 +606,7 @@ local function finishEditing(keepChanges)
         local selectedSet = draft.index > 1 and draft.index or nil
         if selectedSet ~= preferences.mobileArcPage then checkpointDraft() end
     elseif draft.edited then
-        preferences, pendingSave = draft.original, draft.originalPendingSave
+        preferences, pendingSave, staleSetBindings = draft.original, draft.originalPendingSave, draft.originalStaleBindings
         checkpointPreferences()
     end
     picker:Hide()
@@ -617,17 +627,59 @@ local function clickBinding(name, action)
     button:SetPoint("TOPLEFT", UIParent, "TOPLEFT", -10, 10)
     button:EnableMouse(false)
     button:RegisterForClicks("LeftButtonDown", "LeftButtonUp")
-    button:SetScript("OnClick", action)
+    button:SetScript("OnClick", function(self, mouse, down)
+        if not down then action(self, mouse) end
+    end)
     return button:GetName()
 end
 
+-- The graphics CVars apply to this WoW installation, across characters.
+local function toggleFrameLimit()
+    local get = C_CVar and C_CVar.GetCVar or GetCVar
+    local set = C_CVar and C_CVar.SetCVar or SetCVar
+    local limit = get and tonumber(get("maxFPS"))
+    local enabled = get and tonumber(get("useMaxFPS"))
+    if not set or not limit or not enabled then
+        saveFeedback(german and "FPS-Limit hier nicht verfügbar." or "Frame limit unavailable on this client.")
+        return
+    end
+    local prior = ForeverTouchFrameLimit
+    if type(prior) == "table" and type(prior.limit) == "number" and type(prior.enabled) == "number" then
+        ForeverTouchFrameLimit = nil
+        if limit == prior.applied and enabled == 1 then
+            set("maxFPS", prior.limit)
+            set("useMaxFPS", prior.enabled)
+            saveFeedback(german and "Vorheriges FPS-Limit wiederhergestellt." or "Previous frame limit restored.")
+        else
+            saveFeedback(german and "Deine manuelle FPS-Einstellung bleibt aktiv." or "Your manual frame limit is active.")
+        end
+        return
+    end
+    local target = enabled == 1 and limit > 0 and math.min(30, limit) or 30
+    if enabled == 1 and limit == target then
+        saveFeedback(string.format(german and "Bereits auf %d FPS begrenzt." or "Already limited to %d FPS.", target))
+        return
+    end
+    set("maxFPS", target)
+    set("useMaxFPS", 1)
+    if tonumber(get("maxFPS")) == target and tonumber(get("useMaxFPS")) == 1 then
+        ForeverTouchFrameLimit = { limit = limit, enabled = enabled, applied = target }
+        saveFeedback(string.format(german and "FPS-Limit auf %d gesetzt." or "Frame limit set to %d FPS.", target))
+    else
+        set("maxFPS", limit)
+        set("useMaxFPS", enabled)
+        saveFeedback(german and "FPS-Limit konnte nicht gesetzt werden." or "Could not set the frame limit.")
+    end
+end
+
 local clickBindings = {
+    ["CTRL-SHIFT-F"] = clickBinding("FrameLimit", toggleFrameLimit),
     ["CTRL-SHIFT-F7"] = clickBinding("OpenEditor", openEditor),
     ["CTRL-SHIFT-F1"] = clickBinding("SaveEditor", function() finishEditing(true) end),
     ["CTRL-SHIFT-F2"] = clickBinding("CancelEditor", function() finishEditing(false) end),
     ["CTRL-SHIFT-HOME"] = clickBinding("ResetEditor", resetEditor),
-    ["CTRL-SHIFT-PAGEDOWN"] = clickBinding("GroupFinder", function(_, _, down)
-        if not down and ToggleGroupFinderFrame then ToggleGroupFinderFrame() end
+    ["CTRL-SHIFT-PAGEDOWN"] = clickBinding("GroupFinder", function()
+        if ToggleGroupFinderFrame then ToggleGroupFinderFrame() end
     end),
 }
 
@@ -773,6 +825,14 @@ local groupChat = chatControl(german and "Gruppe" or "Group", 99, 129, 98, funct
     chooseChatType(editBox, chatType)
 end)
 local guildChat = chatControl(german and "Gilde" or "Guild", 205, 129, 94, function(editBox) chooseChatType(editBox, "GUILD") end)
+local function updateChatChannels()
+    groupChat:SetEnabled(IsInGroup())
+    guildChat:SetEnabled(IsInGuild())
+end
+chatControl(german and "Neueste" or "Latest", 307, 129, 110, function(editBox)
+    local frame = editBox.chatFrame or DEFAULT_CHAT_FRAME
+    if frame and frame.ScrollToBottom then frame:ScrollToBottom() end
+end)
 chatControl("↑", 599, 4, 58, function(editBox) editBox.chatFrame:PageUp() end)
 chatControl("↓", 599, 56, 58, function(editBox) editBox.chatFrame:PageDown() end)
 
@@ -781,13 +841,11 @@ chatButton:SetSize(1, 1)
 chatButton:SetPoint("TOPLEFT", UIParent, "TOPLEFT", -10, 10)
 chatButton:EnableMouse(false)
 chatButton:SetScript("OnClick", function()
-    if not ChatFrameUtil or not ChatFrameUtil.OpenChat then
-        if ChatFrame_OpenChat then ChatFrame_OpenChat("") end
-        return
-    end
-    local editBox = ChatFrameUtil.GetActiveWindow()
-    if not editBox or not editBox:HasFocus() then
-        editBox = ChatFrameUtil.OpenChat(nil, DEFAULT_CHAT_FRAME)
+    local getActive = ChatFrameUtil and ChatFrameUtil.GetActiveWindow or ChatEdit_GetActiveWindow
+    local open = ChatFrameUtil and ChatFrameUtil.OpenChat or ChatFrame_OpenChat
+    local editBox = getActive and getActive()
+    if (not editBox or not editBox:HasFocus()) and open then
+        editBox = open("", DEFAULT_CHAT_FRAME) or (getActive and getActive())
     end
     if not editBox or not editBox:HasFocus() then return end
     activeEditBox = editBox
@@ -818,8 +876,7 @@ chatButton:SetScript("OnClick", function()
     chatControls:SetScale(height / DESIGN_HEIGHT)
     chatControls:ClearAllPoints()
     chatControls:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 54, -162)
-    groupChat:SetEnabled(IsInGroup())
-    guildChat:SetEnabled(IsInGuild())
+    updateChatChannels()
     chatControls:Show()
 end)
 
@@ -829,7 +886,7 @@ refreshSlots = function()
         pendingRefresh = true
         return
     end
-    pendingRefresh = false
+    pendingRefresh, staleSetBindings = false, false
 
     desktopKeys, desktopRecords = Actions.desktop()
     defaults = Actions.splitDesktop(desktopKeys, desktopRecords)
@@ -843,7 +900,6 @@ refreshSlots = function()
             for slot, binding in ipairs(slots) do
                 local button = group.buttons[slot] or actionButton(group, slot)
                 Actions.bind(button, binding, desktopRecords)
-                Actions.refresh(button, desktopRecords, true)
                 button:Show()
             end
             for slot = #slots + 1, #group.buttons do
@@ -855,7 +911,9 @@ refreshSlots = function()
     end
     for index, page in ipairs(actionPages) do page.frame:SetShown(index == activeIndex) end
     switcher:SetAttribute("pageCount", #livePages)
+    local samePage = switcher:GetAttribute("page") == activeIndex
     switcher:SetAttribute("page", activeIndex)
+    if samePage then refreshLiveButtons(true) end
     switcher:SetText(setLabel(activeIndex, #livePages))
     switcher:SetShown(#livePages > 1)
     layoutActions()
@@ -873,7 +931,12 @@ end
 
 switcher:HookScript("OnAttributeChanged", function(_, name, index)
     if name ~= "page" or not livePages then return end
-    preferences.mobileArcPage = index > 1 and index or nil
+    local active = index > 1 and index or nil
+    if preferences.mobileArcPage ~= active and not staleSetBindings then
+        preferences.mobileArcPage = active
+        preferences.revision = preferenceRevision(preferences) + 1
+        checkpointPreferences()
+    end
     switcher:SetText(setLabel(index, #livePages))
     refreshLiveButtons(true)
 end)
@@ -910,8 +973,20 @@ local function queueRefresh()
     end)
 end
 
+local liveQueued, updateIcons = false, false
+local function queueLiveRefresh(includeIcons)
+    updateIcons = updateIcons or includeIcons
+    if liveQueued then return end
+    liveQueued = true
+    C_Timer.After(0, function()
+        local icons = updateIcons
+        liveQueued, updateIcons = false, false
+        refreshLiveButtons(icons)
+    end)
+end
+
 for _, event in ipairs({
-    "PLAYER_LOGIN", "PLAYER_LOGOUT", "PLAYER_ENTERING_WORLD", "ACTIONBAR_SLOT_CHANGED", "ACTIONBAR_PAGE_CHANGED",
+    "GROUP_ROSTER_UPDATE", "PLAYER_GUILD_UPDATE", "PLAYER_LOGIN", "PLAYER_LOGOUT", "PLAYER_ENTERING_WORLD", "ACTIONBAR_SLOT_CHANGED", "ACTIONBAR_PAGE_CHANGED",
     "DISPLAY_SIZE_CHANGED", "UI_SCALE_CHANGED", "PLAYER_REGEN_ENABLED",
     "ACTIONBAR_UPDATE_COOLDOWN", "ACTIONBAR_UPDATE_USABLE", "BAG_UPDATE_DELAYED",
     "SPELLS_CHANGED", "UPDATE_BONUS_ACTIONBAR", "UPDATE_OVERRIDE_ACTIONBAR",
@@ -946,15 +1021,17 @@ events:SetScript("OnEvent", function(_, event)
         installBindings()
         layoutHUD()
         if pendingRefresh then queueRefresh() end
+    elseif event == "GROUP_ROSTER_UPDATE" or event == "PLAYER_GUILD_UPDATE" then
+        if activeEditBox then updateChatChannels() end
     elseif event == "DISPLAY_SIZE_CHANGED" or event == "UI_SCALE_CHANGED" then
         layoutHUD()
     elseif event == "ACTIONBAR_UPDATE_COOLDOWN" or event == "ACTIONBAR_UPDATE_USABLE" or event == "BAG_UPDATE_DELAYED"
             or event == "SPELL_UPDATE_COOLDOWN" or event == "SPELL_UPDATE_CHARGES" or event == "SPELL_UPDATE_USABLE"
             or event == "BAG_UPDATE_COOLDOWN" then
-        refreshLiveButtons(false)
+        queueLiveRefresh(false)
     elseif event == "ACTIONBAR_SLOT_CHANGED" and InCombatLockdown() then
         pendingRefresh = true
-        refreshLiveButtons(true)
+        queueLiveRefresh(true)
     elseif preferences then
         queueRefresh()
     end

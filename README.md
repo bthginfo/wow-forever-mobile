@@ -93,7 +93,19 @@ The Pixel build checks Direct3D 11 before opening Battle.net sign-in. If the gra
 
 The touch overlay translates Android gestures into keyboard and mouse input for the game window. Forever Touch reads populated action slots and keeps a per-character mobile layout in its own add-on saved variables. Use **Edit skills** to set up the mobile spell and item buttons.
 
-### Skill arc sets
+### Mobile .22 preview
+
+The .22 preview uses separate Android package IDs so .21 can stay installed. Choose the **Pixel Preview** for Pixel 9 and 10 or the **Standalone Preview** for supported Adreno devices. In the preview, select **Find existing game files** and choose your existing WoW folder. Both launchers use that folder's game data and character settings. Close one before starting the other.
+
+## Mobile HUD in .22
+
+**Chat** opens the game chat. **Latest** jumps to the most recent line. **Character** and **Professions** have direct toolbar buttons. **Social** opens Friends, Guild and Group Finder. Swipe the toolbar horizontally on narrow screens.
+
+When a charge is still available, the recharge sweep stays light. Spent charges and empty consumables dim, and an item stack shows its last unit. In the skill editor, replacing a spell or item reopens its list on the page containing the current binding. **Applied** confirms an edit has reached your character profile in memory. **Done** requests one interface reload to write it to disk. Leaving the app also closes the skill editor and requests that save. Combat can postpone the write. WoW must get time to complete the reload or log out normally.
+
+The **30 FPS limit / restore** command in **More controls** limits foreground rendering. Tap it again to restore the previous game setting. A lower active limit is respected.
+
+## Skill arc sets
 
 Open **More controls → Edit skills → Add set**. Each set has its own left and right arc for spells and usable items. Tap **+** on an arc to add a slot and use **‹** and **›** to edit the other sets. With two or more sets, the **Set 1 / 2** button at the bottom of the HUD cycles through them during play. Your existing arc layout becomes **Set 1**. Sets are saved per character.
 

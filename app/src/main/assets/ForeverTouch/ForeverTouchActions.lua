@@ -87,7 +87,8 @@ function Actions.desktop()
     local page = getPage and number(getPage()) or 1
     local first = (math.max(1, math.min(6, page)) - 1) * 12 + 1
     for slot = first, first + 11 do append(slot) end
-    for slot = 1, LIMIT do append(slot) end
+    for slot = 1, first - 1 do append(slot) end
+    for slot = first + 12, LIMIT do append(slot) end
     return ordered, records
 end
 
@@ -219,20 +220,28 @@ function Actions.refresh(button, records, updateIcon)
         usable = false
     end
 
+    local record = slot and records[binding.key]
+    local isItem = binding.kind == "item" or (record and record.kind == "item")
+    local itemCountKnown = isItem and not isSecret(count) and type(count) == "number"
     count = number(count)
-    if charges and number(charges.maxCharges) > 1 and not isSecret(charges.currentCharges) then
+    local knownCharges = charges and number(charges.maxCharges) > 1
+        and not isSecret(charges.currentCharges) and type(charges.currentCharges) == "number"
+    if knownCharges then
         button.count:SetText(charges.currentCharges)
     else
-        button.count:SetText(count > 1 and count or "")
+        button.count:SetText((itemCountKnown or count > 1) and count or "")
     end
     refreshCooldown(button.cooldown, source, id, charges)
-    if not isSecret(usable) and not isSecret(noPower) then
-        local intensity = usable == false and .42 or 1
-        if noPower then
-            button.icon:SetVertexColor(.46, .62, .97)
-        else
-            button.icon:SetVertexColor(intensity, intensity, intensity)
-        end
+    -- A partly recharged spell can still be cast. Keep its icon legible under the swipe.
+    local canSpendCharge = knownCharges and charges.currentCharges > 0
+    button.cooldown:SetSwipeColor(0, 0, 0, canSpendCharge and .30 or .76)
+    if not isSecret(noPower) and noPower then
+        button.icon:SetVertexColor(.46, .62, .97)
+    else
+        local unavailable = (not isSecret(usable) and usable == false)
+            or (itemCountKnown and count == 0) or (knownCharges and charges.currentCharges == 0)
+        local intensity = unavailable and .42 or 1
+        button.icon:SetVertexColor(intensity, intensity, intensity)
     end
 end
 

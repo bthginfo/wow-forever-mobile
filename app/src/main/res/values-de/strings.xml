@@ -638,6 +638,8 @@
     <string name="mobile_talents">Talente</string>
     <string name="mobile_quests">Quests</string>
     <string name="mobile_spellbook">Zauberbuch</string>
+    <string name="mobile_social">Kontakte</string>
+    <string name="mobile_frame_limit">30-FPS-Limit ein/aus</string>
     <string name="mobile_professions">Berufe</string>
     <string name="mobile_friends">Freunde</string>
     <string name="mobile_guild">Gilde</string>

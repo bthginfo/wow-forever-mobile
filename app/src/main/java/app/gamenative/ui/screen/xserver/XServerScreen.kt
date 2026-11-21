@@ -426,6 +426,9 @@ internal fun XServerScreen(
     DisposableEffect(lifecycleOwner, mobileControls) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_PAUSE) mobileControls.releaseAll()
+            if (event == Lifecycle.Event.ON_STOP && mobileControls.hudEditor == MobileHudEditor.Skills) {
+                mobileControls.closeHudEditor(save = true)
+            }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {

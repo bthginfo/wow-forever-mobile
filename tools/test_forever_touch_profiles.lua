@@ -40,6 +40,10 @@ local methods = {
     GetFrameRef = function(self, name) return self.refs[name] end,
     GetFrameLevel = function() return 1 end,
     SetText = function(self, value) self.text = value end,
+    SetSwipeColor = function(self, _, _, _, alpha) self.swipeAlpha = alpha end,
+    SetVertexColor = function(self, red) self.red = red end,
+    SetEnabled = function(self, enabled) self.enabled = enabled end,
+    SetFrameLevel = function(self, level) self.level = level end,
     SetDrawSwipe = function(self, enabled) self.drawSwipe = enabled end,
     SetHideCountdownNumbers = function(self, hidden) self.hideNumbers = hidden end,
     SetMinimumCountdownDuration = function(self, milliseconds) self.minimumCountdown = milliseconds end,
@@ -451,7 +455,7 @@ assert(spellButton.count.text == 1, "a single remaining charge is shown alongsid
 
 itemTimers[501].duration = 45
 event(nil, "BAG_UPDATE_COOLDOWN")
-assert(itemCooldown.timer.duration == 60, "an inactive set waits until it becomes visible")
+assert(not rawget(itemCooldown, "timer"), "an inactive set does no timer work before it becomes visible")
 cycleSet()
 assert(itemCooldown.timer.duration == 45 and itemCooldown.timer.rate == 1, "switching sets refreshes item timers")
 itemTimers[501].enabled = 0
@@ -559,4 +563,127 @@ local point, relative, relativePoint, x, y = chat:GetPoint()
 assert(point == "TOPRIGHT" and relative == UIParent and relativePoint == "TOPRIGHT" and x == -45 and y == -110)
 assert(chat:GetWidth() == 390 and chat:GetHeight() == 142 and entry:GetPoint() == "TOP")
 
-print("Forever Touch passed: arc duplication, autosave, profile persistence, secure switching, cooldowns, professions and chat placement.")
+-- A secure set switch must be recoverable from the account snapshot during play.
+local twoSets = { revision = 8, mobileSlots = legacy.mobileSlots,
+    mobileArcPages = {{ slots = { left = {}, right = {{ kind = "item", id = 501 }} } }} }
+login(first, twoSets, nil, {name = "Tester", realm = "Silver Moon"})
+combat = true
+cycleSet()
+local nameKey = "character:0/silvermoon/tester"
+assert(ForeverTouchProfiles[first] and ForeverTouchProfiles[first].mobileArcPage == 2
+    and ForeverTouchProfiles[nameKey].revision == 9 and reloads == 0, "set switch missed the character backup")
+local accountAfterSwitch = copy(ForeverTouchProfiles)
+login(first, twoSets, accountAfterSwitch)
+assert(frames.ForeverTouchCycleSet:GetAttribute("page") == 2, "stale character file overrode the selected set")
+
+-- WoW may deliver these notifications together before the next rendered frame.
+local addon = login(first, twoSets)
+local refresh = addon.actions.refresh
+local visits, timers = 0, {}
+addon.actions.refresh = function(...) visits = visits + 1; return refresh(...) end
+local immediate = C_Timer.After
+C_Timer.After = function(_, run) timers[#timers + 1] = run end
+for _, name in ipairs({"ACTIONBAR_UPDATE_COOLDOWN", "SPELL_UPDATE_COOLDOWN", "SPELL_UPDATE_CHARGES",
+        "SPELL_UPDATE_USABLE", "BAG_UPDATE_COOLDOWN", "ACTIONBAR_UPDATE_USABLE", "BAG_UPDATE_DELAYED"}) do
+    event(nil, name)
+end
+assert(#timers == 1 and visits == 0, "cooldown burst repeated work before the next frame")
+timers[1]()
+assert(visits == 1, "one visible button should be updated once for a seven-event burst")
+C_Timer.After = immediate
+
+-- During an open edit session an incoming save cannot reload over the user's next edit.
+login(first, legacy)
+timers = {}
+C_Timer.After = function(_, run) timers[#timers + 1] = run end
+click("OpenEditor")
+replaceRight({kind = "item", id = 501})
+click("SaveEditor")
+click("OpenEditor")
+for _, run in ipairs(timers) do run() end
+assert(reloads == 0)
+replaceRight({kind = "spell", id = 202})
+click("SaveEditor")
+local finish = timers[#timers]
+finish()
+assert(reloads == 1 and disk.character.mobileSlots.right[1].id == 202)
+C_Timer.After = immediate
+
+-- The swipe stays light while a charge is available, and items show the last unit and zero.
+C_Item.GetItemCount = function() return 1 end
+C_Item.IsUsableItem = function() return true end
+chargeInfo[201] = { currentCharges = 1, maxCharges = 2 }
+login(first, {mobileSlots = {left = {{kind = "spell", id = 201}}, right = {{kind = "item", id = 501}}}})
+local charged, consumable = frames.ForeverTouchLeftAction1, frames.ForeverTouchRightAction1
+assert(charged.count.text == 1 and charged.cooldown.swipeAlpha == .30 and consumable.count.text == 1)
+chargeInfo[201].currentCharges = 0
+C_Item.GetItemCount = function() return 0 end
+event(nil, "SPELL_UPDATE_CHARGES")
+assert(charged.count.text == 0 and charged.cooldown.swipeAlpha == .76 and charged.icon.red == .42)
+assert(consumable.count.text == 0 and consumable.icon.red == .42)
+C_Item.GetItemCount = function() return secret end
+event(nil, "BAG_UPDATE_DELAYED")
+assert(consumable.count.text == "" and consumable.icon.red == 1)
+assert(charged.count.parent.parent == charged and charged.count.parent.level > charged.cooldown:GetFrameLevel())
+
+-- Direct channel buttons follow membership changes while typing. A legacy open may return nil.
+ChatFrameUtil = nil
+local active
+local entry = CreateFrame("EditBox", nil, UIParent)
+entry:SetSize(380, 30)
+entry:SetPoint("TOP", UIParent, "TOP", 0, -10)
+entry.chatFrame, entry.foreverTouchOriginalPoints, entry.foreverTouchHooks = DEFAULT_CHAT_FRAME, false, false
+entry.HasFocus = function() return true end
+ChatFrame_OpenChat = function() active = entry end
+ChatEdit_GetActiveWindow = function() return active end
+click("OpenChat")
+assert(rawget(entry, "foreverTouchHooks") == true and control("Guild").enabled == false)
+IsInGuild = function() return true end
+event(nil, "PLAYER_GUILD_UPDATE")
+assert(control("Guild").enabled)
+local scrolled = false
+entry.chatFrame.ScrollToBottom = function() scrolled = true end
+control("Latest").scripts.OnClick()
+assert(scrolled, "latest must scroll the active chat window")
+entry.scripts.OnEditFocusLost(entry)
+
+-- The optional game frame limit must survive reload, preserve custom settings, and never raise a low limit.
+local vars = {maxFPS = "120", useMaxFPS = "0"}
+C_CVar = {GetCVar = function(key) return vars[key] end, SetCVar = function(key, value) vars[key] = tostring(value) end}
+ForeverTouchFrameLimit = nil
+local toggle = frames.ForeverTouchFrameLimit
+toggle.scripts.OnClick(toggle, "LeftButton", true)
+assert(vars.maxFPS == "120", "a key-down and key-up must only toggle once")
+click("FrameLimit")
+assert(vars.maxFPS == "30" and vars.useMaxFPS == "1" and ForeverTouchFrameLimit.limit == 120)
+login(second, nil, nil)
+click("FrameLimit")
+assert(vars.maxFPS == "120" and vars.useMaxFPS == "0" and not ForeverTouchFrameLimit)
+vars.maxFPS, vars.useMaxFPS = "24", "1"
+click("FrameLimit")
+assert(vars.maxFPS == "24" and not ForeverTouchFrameLimit)
+vars.maxFPS = "90"
+click("FrameLimit")
+vars.maxFPS = "50"
+click("FrameLimit")
+assert(vars.maxFPS == "50" and not ForeverTouchFrameLimit)
+C_CVar = nil
+click("FrameLimit")
+assert(messages[#messages] == "Frame limit unavailable on this client.")
+
+-- Replacing a skill opens the picker on its existing page.
+local addon = login(first, nil, nil)
+addon.actions.spellChoices = function()
+    local choices = {}
+    for i = 1, 14 do choices[i] = {kind = "spell", id = i, name = "Spell " .. i} end
+    return choices
+end
+assert(loadfile(source .. "/ForeverTouchPicker.lua"))("ForeverTouch", addon)
+local picker = addon.createSlotPicker(UIParent)
+picker:Open(function() end, "spell", {kind = "spell", id = 13})
+assert(control("3 / 3") and control("Spell 13").parent.binding.id == 13)
+picker:Open(function() end, "spell", {kind = "spell", id = 301})
+assert(control("Smelting").parent.binding.id == 301 and not control("Professions").enabled,
+    "replacing a profession spell returns to learned profession actions")
+
+print("Passed: arc autosave and recovery, saved switches, cooldowns and charges, item counts, event batching, picker paging, professions, chat and frame limiting.")

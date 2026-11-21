@@ -68,12 +68,10 @@ private val overlayBackground = Color(0xEB191610)
 private val overlayBorder = Color(0xB2977846)
 private val overlayAccent = Color(0xFFEAC783)
 private val overlayText = Color(0xFFF5E5C9)
-private val gamePanelShortcuts = listOf(
-    R.string.mobile_professions to XKeycode.KEY_INSERT,
+private val socialShortcuts = listOf(
     R.string.mobile_friends to XKeycode.KEY_END,
     R.string.mobile_guild to XKeycode.KEY_PRIOR,
     R.string.mobile_group_finder to XKeycode.KEY_NEXT,
-    R.string.mobile_collections to XKeycode.KEY_DEL,
 )
 
 @Composable
@@ -104,6 +102,7 @@ internal fun BoxScope.MobileGameOverlay(
     val editor = controls.hudEditor.takeIf { playing }
     val editingControls = editor == MobileHudEditor.Controls
     var showMenu by remember { mutableStateOf(false) }
+    var showSocial by remember { mutableStateOf(false) }
     var showDiagnostics by remember { mutableStateOf(false) }
     var showSensitivity by remember { mutableStateOf(false) }
     val context = LocalContext.current
@@ -220,9 +219,21 @@ internal fun BoxScope.MobileGameOverlay(
                                 controls.tap(XKeycode.KEY_F8, modified = true)
                                 receiver.showKeyboard { finishChat(send = true) }
                             }
+                            ToolbarText(R.string.mobile_character, enabled = !editingControls) { controls.tap(XKeycode.KEY_F3, modified = true) }
+                            Box {
+                                ToolbarText(R.string.mobile_social, enabled = !editingControls) { showSocial = true }
+                                DropdownMenu(expanded = showSocial, onDismissRequest = { showSocial = false }) {
+                                    for ((label, key) in socialShortcuts) {
+                                        DropdownMenuItem(text = { Text(stringResource(label)) }, onClick = {
+                                            showSocial = false
+                                            controls.tap(key, modified = true)
+                                        })
+                                    }
+                                }
+                            }
                             ToolbarText(R.string.mobile_bags, enabled = !editingControls) { controls.tap(XKeycode.KEY_F9, modified = true) }
                             ToolbarText(R.string.mobile_map, enabled = !editingControls) { controls.tap(XKeycode.KEY_F11, modified = true) }
-                            ToolbarText(R.string.mobile_character, enabled = !editingControls) { controls.tap(XKeycode.KEY_F3, modified = true) }
+                            ToolbarText(R.string.mobile_professions, enabled = !editingControls) { controls.tap(XKeycode.KEY_INSERT, modified = true) }
                             ToolbarText(R.string.mobile_talents, enabled = !editingControls) { controls.tap(XKeycode.KEY_F4, modified = true) }
                             ToolbarText(R.string.mobile_quests, enabled = !editingControls) { controls.tap(XKeycode.KEY_F5, modified = true) }
                             ToolbarText(R.string.mobile_spellbook, enabled = !editingControls) { controls.tap(XKeycode.KEY_F6, modified = true) }
@@ -273,12 +284,14 @@ internal fun BoxScope.MobileGameOverlay(
                                     showMenu = false
                                     controls.openHudEditor(MobileHudEditor.Skills)
                                 })
-                                for ((label, key) in gamePanelShortcuts) {
-                                    DropdownMenuItem(text = { Text(stringResource(label)) }, onClick = {
-                                        showMenu = false
-                                        controls.tap(key, modified = true)
-                                    })
-                                }
+                                DropdownMenuItem(text = { Text(stringResource(R.string.mobile_collections)) }, onClick = {
+                                    showMenu = false
+                                    controls.tap(XKeycode.KEY_DEL, modified = true)
+                                })
+                                DropdownMenuItem(text = { Text(stringResource(R.string.mobile_frame_limit)) }, onClick = {
+                                    showMenu = false
+                                    controls.tap(XKeycode.KEY_F, modified = true)
+                                })
                                 DropdownMenuItem(text = { Text(stringResource(R.string.mobile_camera_sensitivity)) }, onClick = {
                                     showMenu = false
                                     showSensitivity = true

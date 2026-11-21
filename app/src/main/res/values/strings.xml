@@ -702,6 +702,8 @@
     <string name="mobile_talents">Talents</string>
     <string name="mobile_quests">Quests</string>
     <string name="mobile_spellbook">Spellbook</string>
+    <string name="mobile_social">Social</string>
+    <string name="mobile_frame_limit">30 FPS limit / restore</string>
     <string name="mobile_professions">Professions</string>
     <string name="mobile_friends">Friends</string>
     <string name="mobile_guild">Guild</string>

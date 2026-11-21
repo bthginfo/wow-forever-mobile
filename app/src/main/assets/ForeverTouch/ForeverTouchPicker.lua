@@ -21,6 +21,7 @@ function addon.createSlotPicker(parent)
 
     local choices, page, onSelect = {}, 1, nil
     local currentKind = "spell"
+    local assigned
     local rows = {}
     local function control(text, width, x, y, handler)
         local button = CreateFrame("Button", nil, picker, "UIPanelButtonTemplate")
@@ -58,7 +59,9 @@ function addon.createSlotPicker(parent)
             row.binding = choice
             if choice then
                 row.icon:SetTexture(choice.icon or Actions.texture(choice, {}))
+                local isAssigned = assigned and assigned.kind == choice.kind and assigned.id == choice.id
                 row.label:SetText(choice.name)
+                row.background:SetColorTexture(isAssigned and .58 or .34, isAssigned and .44 or .27, .17, isAssigned and .85 or .38)
             end
             row:SetShown(choice ~= nil)
         end
@@ -73,13 +76,23 @@ function addon.createSlotPicker(parent)
         empty:SetShown(#choices == 0)
     end
 
-    local function showCategory(kind)
+    local function showCategory(kind, locate, requireMatch)
         for _, category in ipairs(categories) do
             if kind == category.kind then
-                currentKind, page = kind, 1
-                choices = category.choices()
+                local entries = category.choices()
+                local target
+                if locate and assigned then
+                    for index, choice in ipairs(entries) do
+                        if choice.kind == assigned.kind and choice.id == assigned.id then
+                            target = math.ceil(index / PAGE_SIZE)
+                            break
+                        end
+                    end
+                end
+                if requireMatch and not target then return false end
+                currentKind, choices, page = kind, entries, target or 1
                 render()
-                return
+                return target ~= nil
             end
         end
     end
@@ -99,7 +112,7 @@ function addon.createSlotPicker(parent)
         row:RegisterForClicks("LeftButtonUp")
         local background = row:CreateTexture(nil, "BACKGROUND")
         background:SetAllPoints()
-        background:SetColorTexture(.34, .27, .17, .38)
+        row.background = background
         row.icon = row:CreateTexture(nil, "ARTWORK")
         row.icon:SetSize(31, 31)
         row.icon:SetPoint("LEFT", 4, 0)
@@ -117,11 +130,15 @@ function addon.createSlotPicker(parent)
         rows[index] = row
     end
 
-    picker:SetScript("OnHide", function() onSelect = nil end)
-    function picker:Open(callback, initialKind)
-        onSelect = callback
+    picker:SetScript("OnHide", function() onSelect, assigned = nil, nil end)
+    function picker:Open(callback, initialKind, current)
+        onSelect, assigned = callback, current
         self:SetScale(UIParent:GetHeight() / 720)
-        showCategory(initialKind or currentKind)
+        local kind = initialKind or currentKind
+        local found = showCategory(kind, true)
+        if assigned and assigned.kind == "spell" and kind == "spell" and not found then
+            showCategory("profession", true, true)
+        end
         self:Show()
     end
 
