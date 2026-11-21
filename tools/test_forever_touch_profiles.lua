@@ -2,7 +2,7 @@
 local source = (arg and arg[1]) or "app/src/main/assets/ForeverTouch"
 local frames, event, choose, player, combat, reloads, disk
 local playerName, playerRealm, bindings, callbacks, messages
-local secureClick
+local secureClick, registered
 
 local function copy(value)
     if type(value) ~= "table" then return value end
@@ -19,6 +19,15 @@ local function guarded(frame)
 end
 
 local methods = {
+    RegisterEvent = function(_, name) registered[name] = true end,
+    GetParent = function(self) return rawget(self, "parent") end,
+    SetParent = function(self, parent) guarded(self); self.parent = parent end,
+    IsVisible = function(self)
+        if not self.shown then return false end
+        local parent = rawget(self, "parent")
+        return not parent or parent:IsVisible()
+    end,
+    GetRight = function(self) return self:GetLeft() + self:GetWidth() end,
     SetScript = function(self, name, callback)
         self.scripts[name] = callback
         if name == "OnEvent" then event = callback end
@@ -103,7 +112,7 @@ function CreateFrame(_, name, parent, template)
     if name then frames[name] = frame end
     return frame
 end
-methods.CreateTexture = function(self) return CreateFrame("Texture", nil, self) end
+methods.CreateTexture = function(self, name) return CreateFrame("Texture", name, self) end
 methods.CreateMaskTexture = methods.CreateTexture
 methods.CreateFontString = methods.CreateTexture
 
@@ -154,7 +163,7 @@ local function login(guid, characterSaved, accountSaved, options)
     options = options or {}
     frames, player, combat, reloads, disk = {}, guid, false, 0, nil
     playerName, playerRealm = options.name, options.realm
-    bindings, callbacks, messages = {}, {}, {}
+    bindings, callbacks, messages, registered = {}, {}, {}, {}
     secureClick, choose = false, nil
     ForeverTouchPreferences, ForeverTouchProfiles = nil, nil
     UIParent = CreateFrame("Frame", "UIParent")
@@ -162,6 +171,11 @@ local function login(guid, characterSaved, accountSaved, options)
     DEFAULT_CHAT_FRAME = CreateFrame("Frame", "ChatFrame1", UIParent)
     DEFAULT_CHAT_FRAME:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 10, 20)
     DEFAULT_CHAT_FRAME:SetSize(430, 180)
+    GENERAL_CHAT_DOCK = CreateFrame("Frame", "GeneralDockManager", UIParent)
+    GENERAL_CHAT_DOCK.windows = {DEFAULT_CHAT_FRAME}
+    FCFDock_GetChatFrames = function(dock) return dock.windows end
+    MinimapCluster = CreateFrame("Frame", "MinimapCluster", UIParent)
+    MinimapCluster.left = 1270
     UIErrorsFrame = { AddMessage = function(_, message) messages[#messages + 1] = message end }
     local addon = {
         createSlotPicker = function()
@@ -179,6 +193,7 @@ local function login(guid, characterSaved, accountSaved, options)
     }
     assert(loadfile(source .. "/ForeverTouchActions.lua"))("ForeverTouch", addon)
     if options.realPicker then assert(loadfile(source .. "/ForeverTouchPicker.lua"))("ForeverTouch", addon) end
+    assert(loadfile(source .. "/ForeverTouchChat.lua"))("ForeverTouch", addon)
     assert(loadfile(source .. "/ForeverTouchMobileLayout.lua"))("ForeverTouch", addon)
     -- The client loads SavedVariables after running the add-on's Lua chunks.
     ForeverTouchPreferences, ForeverTouchProfiles = copy(characterSaved), copy(accountSaved)
@@ -547,73 +562,97 @@ assert(frames.ForeverTouchLeftAction1.attributes.spell == 301 and messages[1] ==
 login(nil, nil, account, { name = "Miner", realm = "Other Realm" })
 assert(not frames.ForeverTouchLeftAction1, "the same character name on another realm must not share a profile")
 
+-- Previous mobile builds could save an upper-left position. The new dock is beside the map.
+login(first, {useSavedChatLayout = true})
 local chat = DEFAULT_CHAT_FRAME
-local function assertTopLeft(frame, y)
-    local point, relative, relativePoint, x, offset = frame:GetPoint()
-    assert(point == "TOPLEFT" and relative == UIParent and relativePoint == "TOPLEFT"
-        and x > 0 and math.abs(offset - y) < .001, "chat should use the upper-left corner")
+local toggleChat = frames.ForeverTouchChatToggle
+local dot = frames.ForeverTouchUnreadWhisper
+local party = CreateFrame("Frame", "CompactPartyFrame", UIParent)
+party:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 30, -100)
+
+local function assertBesideMap(frame, top)
+    local point, relative, relativePoint, x, y = frame:GetPoint()
+    assert(point == "TOPRIGHT" and relative == UIParent and relativePoint == "TOPRIGHT")
+    assert(UIParent:GetWidth() + x < MinimapCluster:GetLeft(), "the frame must end to the left of the minimap")
+    assert(UIParent:GetWidth() + x - frame:GetWidth() >= UIParent:GetWidth() * .25, "keep the group area free")
+    assert(math.abs(y + top * UIParent:GetHeight()) < .001)
 end
 
-assertTopLeft(chat, -162)
-local idleWidth, idleHeight = chat:GetSize()
-local entry = CreateFrame("EditBox", nil, UIParent)
+assertBesideMap(toggleChat, .139)
+assertBesideMap(chat, .245)
+assert(toggleChat:IsVisible() and not chat:IsVisible() and chat:IsShown(), "collapse keeps native chat alive")
+assert(not dot:IsShown())
+event(nil, "CHAT_MSG_WHISPER", secret, secret)
+assert(dot:IsShown() and not chat:IsVisible(), "incoming whispers signal with a dot without expanding")
+click("ChatToggle")
+assert(chat:IsVisible() and not dot:IsShown() and ForeverTouchPreferences.mobileChatOpen)
+event(nil, "CHAT_MSG_WHISPER", "hello")
+assert(not dot:IsShown(), "a visible chat does not need an unopened-chat badge")
+click("ChatToggle")
+event(nil, "CHAT_MSG_BN_WHISPER", "hello")
+assert(dot:IsShown() and not chat:IsVisible(), "Battle.net whispers also signal")
+assert(not registered.CHAT_MSG_WHISPER_INFORM and not registered.CHAT_MSG_BN_WHISPER_INFORM)
+
+local conversation = CreateFrame("Frame", "ChatFrame4", UIParent)
+conversation.chatType = "BN_WHISPER"
+local tab = CreateFrame("Button", "ChatFrame4Tab", GENERAL_CHAT_DOCK)
+_G.ChatFrame4Tab = tab
+local selectedWhisper
+ChatFrameUtil = {IsTabAlerting = function(frame) return frame == tab end}
+FCF_SelectDockFrame = function(frame) selectedWhisper = frame end
+table.insert(GENERAL_CHAT_DOCK.windows, conversation)
+event(nil, "UPDATE_CHAT_WINDOWS")
+assert(conversation:IsShown() and not conversation:IsVisible(), "new docked conversations follow the collapsed panel")
+click("ChatToggle")
+assert(conversation:IsVisible() and GENERAL_CHAT_DOCK:IsVisible())
+assert(selectedWhisper == conversation, "opening the badge selects the native unread whisper tab")
+FCF_SelectDockFrame, _G.ChatFrame4Tab, ChatFrameUtil = nil, nil, nil
+table.remove(GENERAL_CHAT_DOCK.windows)
+event(nil, "UPDATE_CHAT_WINDOWS")
+assert(conversation:GetParent() == UIParent, "an undocked window keeps its independent visibility")
+click("ChatToggle")
+
+local entry = CreateFrame("EditBox", nil, chat)
 entry:SetSize(390, 28)
 entry:SetPoint("TOP", chat, "BOTTOM", 0, -3)
 entry.chatFrame = chat
-entry.foreverTouchOriginalPoints, entry.foreverTouchHooks = false, false
-entry.HasFocus = function() return true end
-ChatFrameUtil = { GetActiveWindow = function() return entry end, OpenChat = function() return entry end }
+entry.HasFocus = function(self) return self:IsVisible() end
+ChatFrameUtil = {GetActiveWindow = function() return entry end, OpenChat = function() return entry end}
+event(nil, "CHAT_MSG_WHISPER", "while collapsed")
 click("OpenChat")
-assertTopLeft(chat, -162)
-assertTopLeft(entry, -105.84)
-assert(chat:GetWidth() > idleWidth)
+assertBesideMap(entry, .147)
+assert(chat:IsVisible() and not toggleChat:IsShown() and not dot:IsShown(), "typing opens a collapsed panel temporarily")
+assertBesideMap(control("Guild").parent, .415)
 entry.scripts.OnEditFocusLost(entry)
-assertTopLeft(chat, -162)
-assert(chat:GetWidth() == idleWidth and chat:GetHeight() == idleHeight and entry:GetPoint() == "TOP")
+assert(toggleChat:IsVisible() and not chat:IsVisible() and entry:GetPoint() == "TOP" and entry:GetWidth() == 390)
 
-UIParent:SetSize(1920, 900)
+UIParent:SetSize(1200, 900)
+MinimapCluster.left = 935
 event(nil, "DISPLAY_SIZE_CHANGED")
-assertTopLeft(chat, -202.5)
--- WoW may reapply its saved layout during a zone or layout change.
-chat:ClearAllPoints()
-chat:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 10, 20)
-event(nil, "EDIT_MODE_LAYOUTS_UPDATED")
-assertTopLeft(chat, -202.5)
+assertBesideMap(chat, .245)
+assertBesideMap(toggleChat, .139)
+assert(party:GetPoint() == "TOPLEFT" and party:GetParent() == UIParent)
 
 local editing = true
 EditModeManagerFrame = {IsEditModeActive = function() return editing end}
 callbacks["EditMode.Enter"]()
-assert(chat:GetPoint() == "BOTTOMLEFT", "WoW edit mode sees the game's real layout")
-callbacks["EditMode.SavedLayouts"]()
+assert(chat:GetPoint() == "BOTTOMLEFT" and chat:GetParent() == UIParent and not toggleChat:IsVisible())
 editing = false
 callbacks["EditMode.Exit"]()
-assertTopLeft(chat, -202.5)
-assert(not ForeverTouchPreferences.useSavedChatLayout, "saving unrelated edits keeps the mobile default")
-
-editing = true
-callbacks["EditMode.Enter"]()
-chat:ClearAllPoints()
-chat:SetPoint("TOPRIGHT", UIParent, "TOPRIGHT", -45, -110)
-callbacks["EditMode.SavedLayouts"]()
-editing = false
-callbacks["EditMode.Exit"]()
-event(nil, "UI_SCALE_CHANGED")
-assert(chat:GetPoint() == "TOPRIGHT" and ForeverTouchPreferences.useSavedChatLayout,
-    "a newly saved WoW chat position remains customizable")
-click("OpenChat")
-assertTopLeft(chat, -202.5)
-entry.scripts.OnEditFocusLost(entry)
-assert(chat:GetPoint() == "TOPRIGHT", "typing restores the explicitly saved chat position")
+assertBesideMap(chat, .245)
+assert(not chat:IsVisible() and toggleChat:IsVisible())
 EditModeManagerFrame = nil
 
-login(first)
-assertTopLeft(DEFAULT_CHAT_FRAME, -162)
-DEFAULT_CHAT_FRAME.protected = true
 combat = true
-event(nil, "DISPLAY_SIZE_CHANGED")
+click("ChatToggle")
+assert(chat:IsVisible() and reloads == 0, "the toggle works during combat without reloading")
 combat = false
-event(nil, "PLAYER_REGEN_ENABLED")
-assertTopLeft(DEFAULT_CHAT_FRAME, -162)
+local savedChat = copy(ForeverTouchPreferences)
+event(nil, "PLAYER_LOGOUT")
+assert(chat:GetParent() == UIParent and chat:GetPoint() == "BOTTOMLEFT")
+login(first, savedChat)
+assert(DEFAULT_CHAT_FRAME:IsVisible() and not frames.ForeverTouchUnreadWhisper:IsShown(), "only the open state is saved")
+ChatFrameUtil = nil
 
 -- A secure set switch must be recoverable from the account snapshot during play.
 local twoSets = { revision = 8, mobileSlots = legacy.mobileSlots,
@@ -684,12 +723,12 @@ local active
 local entry = CreateFrame("EditBox", nil, UIParent)
 entry:SetSize(380, 30)
 entry:SetPoint("TOP", UIParent, "TOP", 0, -10)
-entry.chatFrame, entry.foreverTouchOriginalPoints, entry.foreverTouchHooks = DEFAULT_CHAT_FRAME, false, false
+entry.chatFrame = DEFAULT_CHAT_FRAME
 entry.HasFocus = function() return true end
 ChatFrame_OpenChat = function() active = entry end
 ChatEdit_GetActiveWindow = function() return active end
 click("OpenChat")
-assert(rawget(entry, "foreverTouchHooks") == true and control("Guild").enabled == false)
+assert(rawget(entry, "foreverTouchFocusHook") == true and control("Guild").enabled == false)
 IsInGuild = function() return true end
 event(nil, "PLAYER_GUILD_UPDATE")
 assert(control("Guild").enabled)
@@ -789,4 +828,4 @@ timerCallbacks[1]()
 assert(visits == 2, "rebinding updates each visible slot once")
 C_Timer.After = immediate
 
-print("Passed: arc autosave and recovery, saved switches, cooldowns and charges, item counts, event batching, picker paging, professions, chat and frame limiting.")
+print("Passed: arc autosave and recovery, saved switches, cooldowns and charges, item counts, event batching, picker paging, professions, chat docking, whisper alerts and frame limiting.")

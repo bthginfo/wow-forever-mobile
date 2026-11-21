@@ -300,6 +300,14 @@ class MobileTouchControlsTest {
     }
 
     @Test
+    fun chatComposerAcceptsTapsBesideTheMinimapAndLeavesThePartyAreaFree() {
+        assertTrue(TouchpadView.isMobileChatGuestPoint(1040f, 182f, 1536f, 720f))
+        assertTrue(TouchpadView.isMobileChatGuestPoint(925f, 430f, 1200f, 900f))
+        assertFalse(TouchpadView.isMobileChatGuestPoint(100f, 180f, 1536f, 720f))
+        assertFalse(TouchpadView.isMobileChatGuestPoint(1100f, 480f, 1536f, 720f))
+    }
+
+    @Test
     fun pastedGermanChatStaysOnOneLineAndKeepsSlashCommands() {
         assertEquals("/g Gruesse - fuer alle", normalizeMobileChat("/g Grüße —\nfür alle"))
     }

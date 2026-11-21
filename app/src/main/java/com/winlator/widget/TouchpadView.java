@@ -2279,10 +2279,12 @@ public class TouchpadView extends View implements View.OnCapturedPointerListener
 
     public boolean isMobileChatTouch(float x, float y) {
         float[] point = XForm.transformPoint(xform, x, y);
-        float height = xServer.screenInfo.height;
-        // The game-side chat composer fits this part of the guest viewport, including channel and scroll buttons.
-        return point[0] >= height * .06f && point[0] <= height * 1.03f
-            && point[1] >= height * .13f && point[1] <= height * .48f;
+        return isMobileChatGuestPoint(point[0], point[1], xServer.screenInfo.width, xServer.screenInfo.height);
+    }
+
+    public static boolean isMobileChatGuestPoint(float x, float y, float width, float height) {
+        // The docked composer and its controls stay outside the left quarter of the guest view.
+        return x >= width * .25f && x <= width && y >= height * .13f && y <= height * .51f;
     }
 
     public void beginMobileLook() {

@@ -15,7 +15,9 @@ internal fun installMobileAddon(context: Context, gameRoot: File) {
     val manifest = context.assets.open("ForeverTouch/ForeverTouch.toc").bufferedReader().use { toc ->
         "## X-ForeverTouch-Language: ${language.tag}\n${toc.readText()}".toByteArray()
     }
-    val scripts = listOf("ForeverTouchActions.lua", "ForeverTouchPicker.lua", "ForeverTouchMobileLayout.lua").map { name ->
+    val scripts = listOf(
+        "ForeverTouchActions.lua", "ForeverTouchPicker.lua", "ForeverTouchChat.lua", "ForeverTouchMobileLayout.lua",
+    ).map { name ->
         name to context.assets.open("ForeverTouch/$name").use { it.readBytes() }
     }
     // Forever prefers the Camelot manifest installed by the HUD ZIP. Refresh it together with the fallback.

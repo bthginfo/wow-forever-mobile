@@ -1,5 +1,6 @@
 local _, addon = ...
 local Actions = addon.actions
+local Chat = addon.chat
 local SIDES = Actions.sides
 local DESIGN_HEIGHT = 720
 local ICON_SIZE = 62
@@ -24,7 +25,6 @@ local shade = editShield:CreateTexture(nil, "BACKGROUND")
 shade:SetAllPoints()
 shade:SetColorTexture(.07, .05, .03, .32)
 local picker = addon.createSlotPicker(editShield)
-local activeEditBox, typingChatLayout, defaultChatLayout, editModeChatLayout
 
 local groups = {}
 for _, side in ipairs(SIDES) do
@@ -675,6 +675,7 @@ end
 local clickBindings = {
     ["CTRL-SHIFT-F"] = clickBinding("FrameLimit", toggleFrameLimit),
     ["CTRL-SHIFT-F7"] = clickBinding("OpenEditor", openEditor),
+    ["CTRL-SHIFT-F8"] = clickBinding("OpenChat", Chat.open),
     ["CTRL-SHIFT-F1"] = clickBinding("SaveEditor", function() finishEditing(true) end),
     ["CTRL-SHIFT-F2"] = clickBinding("CancelEditor", function() finishEditing(false) end),
     ["CTRL-SHIFT-HOME"] = clickBinding("ResetEditor", resetEditor),
@@ -682,77 +683,6 @@ local clickBindings = {
         if ToggleGroupFinderFrame then ToggleGroupFinderFrame() end
     end),
 }
-
-local function framePoints(frame)
-    local points = {}
-    for index = 1, frame:GetNumPoints() do points[index] = { frame:GetPoint(index) } end
-    return points
-end
-
-local function restorePoints(frame, points)
-    frame:ClearAllPoints()
-    for _, point in ipairs(points) do frame:SetPoint(unpack(point, 1, 5)) end
-end
-
-local function canMoveChat(frame)
-    return frame and not frame:IsForbidden() and not (InCombatLockdown() and frame:IsProtected())
-end
-
-local function captureChat(frame)
-    return { frame = frame, points = framePoints(frame), width = frame:GetWidth(), height = frame:GetHeight() }
-end
-
-local function restoreChat(layout)
-    if not layout then return end
-    local frame = layout.frame
-    if not canMoveChat(frame) then return layout end
-    restorePoints(frame, layout.points)
-    frame:SetSize(layout.width, layout.height)
-end
-
-local function sameChatLayout(layout)
-    local frame, points = layout.frame, layout.points
-    if frame:GetWidth() ~= layout.width or frame:GetHeight() ~= layout.height
-            or frame:GetNumPoints() ~= #points then return false end
-    for index, saved in ipairs(points) do
-        local point, relative, relativePoint, x, y = frame:GetPoint(index)
-        if point ~= saved[1] or relative ~= saved[2] or relativePoint ~= saved[3]
-                or x ~= saved[4] or y ~= saved[5] then return false end
-    end
-    return true
-end
-
-local function positionChat(frame, widthFraction)
-    local height = UIParent:GetHeight()
-    local x, y, width, panelHeight = height * .075, -height * .225, height * widthFraction, height * .155
-    if frame:GetNumPoints() == 1 then
-        local point, relative, relativePoint, currentX, currentY = frame:GetPoint()
-        if point == "TOPLEFT" and relative == UIParent and relativePoint == "TOPLEFT"
-                and math.abs((currentX or 0) - x) < .1 and math.abs((currentY or 0) - y) < .1
-                and math.abs(frame:GetWidth() - width) < .1 and math.abs(frame:GetHeight() - panelHeight) < .1 then
-            return
-        end
-    end
-    frame:ClearAllPoints()
-    frame:SetPoint("TOPLEFT", UIParent, "TOPLEFT", x, y)
-    frame:SetSize(width, panelHeight)
-end
-
-local function dockDefaultChat()
-    local frame = DEFAULT_CHAT_FRAME
-    if not preferences or preferences.useSavedChatLayout or not canMoveChat(frame) then return end
-    if EditModeManagerFrame and EditModeManagerFrame:IsEditModeActive() then return end
-    if typingChatLayout and typingChatLayout.frame == frame then return end
-    defaultChatLayout = defaultChatLayout or captureChat(frame)
-    positionChat(frame, .61)
-end
-
-local function dockChatForTyping(frame)
-    if not canMoveChat(frame) then return end
-    if EditModeManagerFrame and EditModeManagerFrame:IsEditModeActive() then return end
-    typingChatLayout = typingChatLayout or captureChat(frame)
-    positionChat(frame, .82)
-end
 
 local desktopBarNames = {
     "MainActionBar", "MultiBarBottomLeft", "MultiBarBottomRight", "MultiBarLeft", "MultiBarRight",
@@ -822,7 +752,7 @@ local function layoutHUD()
     if InCombatLockdown() then return end
     local height = UIParent:GetHeight()
     updateDesktopBars()
-    dockDefaultChat()
+    Chat.layout()
 
     -- Leave room below quests for the right thumb arc even after WoW refreshes the tracker.
     local tracker = ObjectiveTrackerFrame
@@ -839,94 +769,6 @@ local function layoutHUD()
     end
     layoutActions()
 end
-
-local chatControls = CreateFrame("Frame", nil, UIParent)
-chatControls:SetFrameStrata("DIALOG")
-chatControls:SetSize(1, 1)
-chatControls:Hide()
-
-local function chatControl(text, x, y, width, action)
-    local button = CreateFrame("Button", nil, chatControls, "UIPanelButtonTemplate")
-    button:SetSize(width, 49)
-    button:SetPoint("TOPLEFT", chatControls, "TOPLEFT", x, -y)
-    button:SetText(text)
-    button:SetScript("OnClick", function()
-        if activeEditBox then action(activeEditBox) end
-    end)
-    return button
-end
-
-local function chooseChatType(editBox, chatType)
-    editBox:SetChatType(chatType)
-    editBox:UpdateHeader()
-end
-
-chatControl(german and "Sagen" or "Say", 0, 129, 91, function(editBox) chooseChatType(editBox, "SAY") end)
-local groupChat = chatControl(german and "Gruppe" or "Group", 99, 129, 98, function(editBox)
-    local chatType = IsInGroup(LE_PARTY_CATEGORY_INSTANCE) and "INSTANCE_CHAT" or (IsInRaid() and "RAID" or "PARTY")
-    chooseChatType(editBox, chatType)
-end)
-local guildChat = chatControl(german and "Gilde" or "Guild", 205, 129, 94, function(editBox) chooseChatType(editBox, "GUILD") end)
-local function updateChatChannels()
-    groupChat:SetEnabled(IsInGroup())
-    guildChat:SetEnabled(IsInGuild())
-end
-chatControl(german and "Neueste" or "Latest", 307, 129, 110, function(editBox)
-    local frame = editBox.chatFrame or DEFAULT_CHAT_FRAME
-    if frame and frame.ScrollToBottom then frame:ScrollToBottom() end
-end)
-chatControl("↑", 599, 4, 58, function(editBox) editBox.chatFrame:PageUp() end)
-chatControl("↓", 599, 56, 58, function(editBox) editBox.chatFrame:PageDown() end)
-
-local function layoutChatInput(editBox)
-    if not canMoveChat(editBox) then return end
-    local height = UIParent:GetHeight()
-    dockChatForTyping(editBox.chatFrame or DEFAULT_CHAT_FRAME)
-    editBox:ClearAllPoints()
-    editBox:SetPoint("TOPLEFT", UIParent, "TOPLEFT", height * .075, -height * .147)
-    editBox:SetWidth(height * .93)
-    if FCF_FadeInChatFrame then FCF_FadeInChatFrame(editBox.chatFrame or DEFAULT_CHAT_FRAME) end
-    chatControls:SetScale(height / DESIGN_HEIGHT)
-    chatControls:ClearAllPoints()
-    chatControls:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 54, -162)
-    updateChatChannels()
-    chatControls:Show()
-end
-
-local chatButton = CreateFrame("Button", "ForeverTouchOpenChat", UIParent)
-chatButton:SetSize(1, 1)
-chatButton:SetPoint("TOPLEFT", UIParent, "TOPLEFT", -10, 10)
-chatButton:EnableMouse(false)
-chatButton:SetScript("OnClick", function()
-    local getActive = ChatFrameUtil and ChatFrameUtil.GetActiveWindow or ChatEdit_GetActiveWindow
-    local open = ChatFrameUtil and ChatFrameUtil.OpenChat or ChatFrame_OpenChat
-    local editBox = getActive and getActive()
-    if (not editBox or not editBox:HasFocus()) and open then
-        editBox = open("", DEFAULT_CHAT_FRAME) or (getActive and getActive())
-    end
-    if not editBox or not editBox:HasFocus() then return end
-    activeEditBox = editBox
-
-    -- Put the real WoW edit box above the landscape Android keyboard without losing its channel or history.
-    if not editBox.foreverTouchOriginalPoints then
-        editBox.foreverTouchOriginalPoints = framePoints(editBox)
-        editBox.foreverTouchOriginalWidth = editBox:GetWidth()
-    end
-    if not editBox.foreverTouchHooks then
-        editBox.foreverTouchHooks = true
-        editBox:HookScript("OnEditFocusLost", function(self)
-            if not self.foreverTouchOriginalPoints then return end
-            self:SetWidth(self.foreverTouchOriginalWidth)
-            restorePoints(self, self.foreverTouchOriginalPoints)
-            self.foreverTouchOriginalPoints = nil
-            activeEditBox = nil
-            chatControls:Hide()
-            typingChatLayout = restoreChat(typingChatLayout)
-            dockDefaultChat()
-        end)
-    end
-    layoutChatInput(editBox)
-end)
 
 refreshSlots = function()
     if not preferences then return end
@@ -999,7 +841,6 @@ local function installBindings()
     SetOverrideBinding(events, true, "CTRL-SHIFT-F5", "TOGGLEQUESTLOG")
     SetOverrideBinding(events, true, "CTRL-SHIFT-F6", "TOGGLESPELLBOOK")
     for key, button in pairs(clickBindings) do SetOverrideBindingClick(events, true, key, button) end
-    SetOverrideBindingClick(events, true, "CTRL-SHIFT-F8", chatButton:GetName())
     SetOverrideBinding(events, true, "CTRL-SHIFT-F9", "OPENALLBAGS")
     SetOverrideBinding(events, true, "CTRL-SHIFT-F10", "INTERACTTARGET")
     SetOverrideBinding(events, true, "CTRL-SHIFT-F11", "TOGGLEWORLDMAP")
@@ -1032,10 +873,20 @@ local function queueRefresh(rebind, updateIcon, updateCooldown)
     end)
 end
 
+local function loadHudPreferences()
+    loadPreferences()
+    Chat.initialize(preferences.mobileChatOpen, function(expanded)
+        preferences.mobileChatOpen = expanded
+        preferences.revision = preferenceRevision(preferences) + 1
+        checkpointPreferences()
+    end)
+end
+
 for _, event in ipairs({
     "GROUP_ROSTER_UPDATE", "PLAYER_GUILD_UPDATE", "PLAYER_LOGIN", "PLAYER_LOGOUT", "PLAYER_ENTERING_WORLD", "ACTIONBAR_SLOT_CHANGED", "ACTIONBAR_PAGE_CHANGED",
     "DISPLAY_SIZE_CHANGED", "UI_SCALE_CHANGED", "PLAYER_REGEN_ENABLED", "EDIT_MODE_LAYOUTS_UPDATED",
-    "PLAYER_SPECIALIZATION_CHANGED",
+    "PLAYER_SPECIALIZATION_CHANGED", "UPDATE_CHAT_WINDOWS", "UPDATE_FLOATING_CHAT_WINDOWS",
+    "CHAT_MSG_WHISPER", "CHAT_MSG_BN_WHISPER",
     "ACTIONBAR_UPDATE_COOLDOWN", "ACTIONBAR_UPDATE_USABLE", "BAG_UPDATE_DELAYED",
     "SPELLS_CHANGED", "UPDATE_BONUS_ACTIONBAR", "UPDATE_OVERRIDE_ACTIONBAR",
     "SPELL_UPDATE_COOLDOWN", "SPELL_UPDATE_CHARGES", "SPELL_UPDATE_USABLE", "BAG_UPDATE_COOLDOWN",
@@ -1045,13 +896,12 @@ end
 
 events:SetScript("OnEvent", function(_, event)
     if event == "PLAYER_LOGIN" then
-        loadPreferences()
+        loadHudPreferences()
     elseif event == "PLAYER_LOGOUT" then
-        typingChatLayout = restoreChat(typingChatLayout)
-        defaultChatLayout = restoreChat(defaultChatLayout)
+        Chat.suspend()
         checkpointPreferences()
     elseif event == "PLAYER_ENTERING_WORLD" then
-        if not preferences then loadPreferences() end
+        if not preferences then loadHudPreferences() end
         if confirmSaved then
             confirmSaved = nil
             saveFeedback(german and "Arc-Belegung gespeichert." or "Arc layout saved.")
@@ -1067,21 +917,18 @@ events:SetScript("OnEvent", function(_, event)
         end)
     elseif event == "PLAYER_REGEN_ENABLED" then
         flushSave()
-        if activeEditBox then
-            layoutChatInput(activeEditBox)
-        else
-            typingChatLayout = restoreChat(typingChatLayout)
-        end
         installBindings()
         layoutHUD()
         if pendingRefresh then queueRefresh(true) end
     elseif event == "GROUP_ROSTER_UPDATE" or event == "PLAYER_GUILD_UPDATE" then
-        if activeEditBox then updateChatChannels() end
+        Chat.updateChannels()
     elseif event == "DISPLAY_SIZE_CHANGED" or event == "UI_SCALE_CHANGED" then
         layoutHUD()
-        if activeEditBox then layoutChatInput(activeEditBox) end
-    elseif event == "EDIT_MODE_LAYOUTS_UPDATED" or event == "PLAYER_SPECIALIZATION_CHANGED" then
-        C_Timer.After(0, dockDefaultChat)
+    elseif event == "CHAT_MSG_WHISPER" or event == "CHAT_MSG_BN_WHISPER" then
+        Chat.whisper()
+    elseif event == "EDIT_MODE_LAYOUTS_UPDATED" or event == "PLAYER_SPECIALIZATION_CHANGED"
+            or event == "UPDATE_CHAT_WINDOWS" or event == "UPDATE_FLOATING_CHAT_WINDOWS" then
+        Chat.queueLayout()
     elseif event == "ACTIONBAR_UPDATE_USABLE" or event == "SPELL_UPDATE_USABLE" then
         queueRefresh(false, false, false)
     elseif event == "ACTIONBAR_UPDATE_COOLDOWN" or event == "BAG_UPDATE_DELAYED" or event == "SPELL_UPDATE_COOLDOWN"
@@ -1097,22 +944,11 @@ end)
 
 if EventRegistry then
     EventRegistry:RegisterCallback("EditMode.Enter", function()
-        typingChatLayout = restoreChat(typingChatLayout)
-        defaultChatLayout = restoreChat(defaultChatLayout)
-        local frame = DEFAULT_CHAT_FRAME
-        editModeChatLayout = canMoveChat(frame) and captureChat(frame) or nil
+        Chat.suspend()
         C_Timer.After(0, updateDesktopBars)
     end, events)
-    EventRegistry:RegisterCallback("EditMode.SavedLayouts", function()
-        if preferences and not preferences.useSavedChatLayout and editModeChatLayout
-                and not sameChatLayout(editModeChatLayout) then
-            preferences.useSavedChatLayout = true
-            preferences.revision = preferenceRevision(preferences) + 1
-            checkpointPreferences()
-        end
-    end, events)
     EventRegistry:RegisterCallback("EditMode.Exit", function()
-        editModeChatLayout = nil
+        Chat.resume()
         C_Timer.After(0, layoutHUD)
     end, events)
 end

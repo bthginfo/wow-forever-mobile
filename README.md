@@ -79,7 +79,7 @@ The Pixel build checks Direct3D 11 before opening Battle.net sign-in. If the gra
 | Right camera area | Drag to turn the camera |
 | Jump | Right-side shortcut |
 | Target, Interact | Right-side shortcuts on phones and left-side shortcuts in the tablet layout |
-| Chat | Opens chat with the Android keyboard. The chat toolbar includes Paste and Send. |
+| Write | Opens chat with the Android keyboard. The chat toolbar includes Paste and Send. |
 | Bags, Map, Character | Opens the corresponding WoW panel |
 | Talents, Quests, Spellbook | Opens the corresponding WoW panel |
 | Toolbar arrow | Minimizes the toolbar to one button. Tap it to show the shortcuts again. |
@@ -93,13 +93,13 @@ The Pixel build checks Direct3D 11 before opening Battle.net sign-in. If the gra
 
 The touch overlay translates Android gestures into keyboard and mouse input for the game window. Forever Touch reads populated action slots and keeps a per-character mobile layout in its own add-on saved variables. Use **Edit skills** to set up the mobile spell and item buttons.
 
-### Update the .22 preview to .23
+### Update the .23 preview to .24
 
-Install the matching .23 APK over .22 Preview to keep your launcher and game settings. Use **Pixel Preview** for Pixel 9 and 10 or **Standalone Preview** for supported Adreno devices. The preview can also be installed alongside .21. On a fresh preview installation, use **Find existing game files** to select the existing WoW folder.
+Install the matching .24 APK over .23 Preview to keep your launcher and game settings. Use **Pixel Preview** for Pixel 9 and 10 or **Standalone Preview** for supported Adreno devices. The preview can also be installed alongside .21. On a fresh preview installation, use **Find existing game files** to select the existing WoW folder.
 
 ## Mobile HUD in the preview
 
-**Chat** opens the game chat. **Latest** jumps to the most recent line. **Character** and **Professions** have direct toolbar buttons. **Social** opens Friends, Guild and Group Finder. Swipe the toolbar horizontally on narrow screens.
+**Write** opens the keyboard for game chat. **Latest** jumps to the most recent line. **Character** and **Professions** have direct toolbar buttons. **Social** opens Friends, Guild and Group Finder. Swipe the toolbar horizontally on narrow screens.
 
 When a charge is still available, the recharge sweep stays light. Spent charges and empty consumables dim, and an item stack shows its last unit. In the skill editor, replacing a spell or item reopens its list on the page containing the current binding. **Applied** confirms an edit has reached your character profile in memory. **Done** requests one interface reload to write it to disk. Leaving the app also closes the skill editor and requests that save. Combat can postpone the write. WoW must get time to complete the reload or log out normally.
 
@@ -115,7 +115,7 @@ Arc edits apply as soon as you make them. Tap **Done** or use Android Back to cl
 
 To bind a learned entry such as Smelting or Fishing, open **More controls → Edit skills**, tap **+** and choose **Professions** in the slot picker.
 
-Chat opens in the upper-left corner. The chat panel widens while you type. To place it somewhere else, move the chat frame in WoW’s **Edit Mode** and save the layout.
+The **Chat** button sits directly to the left of the minimap. Tap it to show or hide the chat. A red dot on the collapsed button signals an incoming whisper. Open the chat to clear it. Use **Write** in the toolbar to bring up the keyboard.
 
 ### Tablets and fullscreen
 
