@@ -7,12 +7,33 @@ import org.junit.Test
 
 class GpuProfileTest {
     @Test
+    fun originalPixelFoldUsesTheMaliVulkanPath() {
+        val fold = GpuProfile.select(true, "Google", "Pixel Fold") {
+            error("The Tensor G2 Pixel Fold should skip Adreno detection")
+        }
+        val foldByDevice = GpuProfile.select(true, "Google", "AOSP Fold", "felix") {
+            error("The felix device should skip Adreno detection")
+        }
+        val config = KeyValueSet(fold.graphicsDriverConfig)
+
+        assertEquals(GpuProfile.PIXEL_MALI, fold)
+        assertEquals(fold, foldByDevice)
+        assertEquals("System", config.get("version"))
+        assertEquals("0", config.get("adrenotoolsTurnip"))
+        assertEquals("Wrapper-GameNative", fold.graphicsWrapper)
+        assertEquals("2.4.1-wow-powervr", fold.dxvkVersion)
+        assertEquals("1280x720", fold.screenSize)
+        assertNull(fold.bundledDriver)
+        assertNull(fold.tuDebug)
+    }
+
+    @Test
     fun pixel9ModelsUseSystemMaliVulkanInTheTestBuild() {
         for (model in listOf("Pixel 9", "Pixel 9 Pro", "Pixel 9 Pro XL", "Pixel 9 Pro Fold")) {
             val profile = GpuProfile.select(true, "Google", model) { error("Pixel should skip Adreno detection") }
             val config = KeyValueSet(profile.graphicsDriverConfig)
 
-            assertEquals(GpuProfile.PIXEL_9, profile)
+            assertEquals(GpuProfile.PIXEL_MALI, profile)
             assertEquals("Wrapper-GameNative", profile.graphicsWrapper)
             assertEquals("2.4.1-wow-powervr", profile.dxvkVersion)
             assertEquals("System", config.get("version"))
@@ -45,6 +66,8 @@ class GpuProfileTest {
 
     @Test
     fun pixelBaseBuildAndOtherGoogleModelsKeepTheExistingSelection() {
+        assertEquals(GpuProfile.ADRENO_7XX, GpuProfile.select(false, "Google", "Pixel Fold", "felix") { false })
+        assertEquals(GpuProfile.ADRENO_7XX, GpuProfile.select(true, "Samsung", "Pixel Fold", "felix") { false })
         assertEquals(GpuProfile.ADRENO_7XX, GpuProfile.select(false, "Google", "Pixel 9 Pro XL") { false })
         assertEquals(GpuProfile.ADRENO_7XX, GpuProfile.select(false, "Google", "Pixel 10") { false })
         assertEquals(GpuProfile.ADRENO_7XX, GpuProfile.select(true, "Google", "Pixel 10a") { false })

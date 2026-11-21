@@ -28,12 +28,12 @@ internal enum class GpuProfile(
         "1280x720",
         "Snapdragon 8 Elite / Adreno 8xx",
     ),
-    PIXEL_9(
+    PIXEL_MALI(
         "System",
         null,
         null,
         "1280x720",
-        "Pixel 9 / Mali Vulkan",
+        "Pixel / Mali Vulkan",
         graphicsWrapper = "Wrapper-GameNative",
         dxvkVersion = "2.4.1-wow-powervr",
     ),
@@ -56,20 +56,23 @@ internal enum class GpuProfile(
         }
 
     companion object {
-        private val pixel9Models = setOf("Pixel 9", "Pixel 9 Pro", "Pixel 9 Pro XL", "Pixel 9 Pro Fold")
+        private val maliPixelModels = setOf("Pixel Fold", "Pixel 9", "Pixel 9 Pro", "Pixel 9 Pro XL", "Pixel 9 Pro Fold")
         private val pixel10Models = setOf("Pixel 10", "Pixel 10 Pro", "Pixel 10 Pro XL", "Pixel 10 Pro Fold")
 
         fun detect(context: Context): GpuProfile =
-            select(BuildConfig.PIXEL_VULKAN_TEST, Build.MANUFACTURER, Build.MODEL) { isAdreno8xxDevice(context) }
+            select(BuildConfig.PIXEL_VULKAN_TEST, Build.MANUFACTURER, Build.MODEL, Build.DEVICE) {
+                isAdreno8xxDevice(context)
+            }
 
         fun select(
             pixelVulkanTestEnabled: Boolean,
             manufacturer: String,
             model: String,
+            device: String = "",
             isAdreno8xx: () -> Boolean,
         ): GpuProfile {
             if (pixelVulkanTestEnabled && manufacturer.equals("Google", ignoreCase = true)) {
-                if (model in pixel9Models) return PIXEL_9
+                if (model in maliPixelModels || device.equals("felix", ignoreCase = true)) return PIXEL_MALI
                 if (model in pixel10Models) return PIXEL_10
             }
             return if (isAdreno8xx()) ADRENO_8XX else ADRENO_7XX
