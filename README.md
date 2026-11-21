@@ -85,7 +85,7 @@ The Pixel build checks Direct3D 11 before opening Battle.net sign-in. If the gra
 | Toolbar arrow | Minimizes the toolbar to one button. Tap it to show the shortcuts again. |
 | More controls → Edit controls | Moves the sticks, shortcuts, or toolbar |
 | More controls → Edit skills | Assigns spells and usable bag items, swaps slots by dragging, and moves the arcs by their handles |
-| More controls → Professions, Friends, Guild, Group Finder, Collections | Opens these WoW panels |
+| Professions · Social · More controls | In .22, Professions opens directly, Social contains Friends, Guild and Group Finder, and More controls contains Collections. In .21 all five panels are under More controls. |
 | More controls → Camera sensitivity | Sets how quickly the camera turns |
 | More controls → Enter or exit fullscreen | Hides or shows the Android status and navigation bars |
 | More controls → Text input | Opens the Android keyboard and paste controls for the game |
