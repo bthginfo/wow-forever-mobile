@@ -42,6 +42,7 @@ local refreshSlots, refreshLiveButtons, updateEditor
 local pendingRefresh, refreshQueued = false, false
 local pendingSave, saveQueued = false, false
 local staleSetBindings = false
+local spellRanks, spellRanksDirty = nil, true
 
 local switcher = CreateFrame("Button", "ForeverTouchCycleSet", UIParent, "UIPanelButtonTemplate,SecureHandlerClickTemplate")
 switcher:SetFrameStrata("HIGH")
@@ -290,20 +291,38 @@ local function copyPositions(source)
     return result
 end
 
-local function savedPages()
+local function savedPage(profile, positions)
+    local slots = Actions.copyProfile(profile)
+    local upgraded = Actions.upgradeSpellRanks(slots, desktopRecords, spellRanks)
+    return { slots = slots, positions = copyPositions(positions) }, upgraded
+end
+
+local function savedPages(persistUpgrades)
     local first = defaults
     if type(preferences.mobileSlots) == "table" then
         first = preferences.mobileSlots
     elseif preferences.order or preferences.favorites then
         first = Actions.splitDesktop(desktopKeys, desktopRecords, preferences.order or preferences.favorites)
     end
-    local pages = { { slots = Actions.copyProfile(first), positions = copyPositions(preferences.mobileArcPositions) } }
+    local firstPage, upgraded = savedPage(first, preferences.mobileArcPositions)
+    local pages = { firstPage }
+    local saved = persistUpgrades and upgraded and first == preferences.mobileSlots
+    if saved then preferences.mobileSlots = firstPage.slots end
     if type(preferences.mobileArcPages) == "table" then
         for _, page in ipairs(preferences.mobileArcPages) do
             if type(page) == "table" then
-                pages[#pages + 1] = { slots = Actions.copyProfile(page.slots), positions = copyPositions(page.positions) }
+                local livePage, changed = savedPage(page.slots, page.positions)
+                pages[#pages + 1] = livePage
+                if persistUpgrades and changed then
+                    page.slots = livePage.slots
+                    saved = true
+                end
             end
         end
+    end
+    if saved then
+        preferences.revision = preferenceRevision(preferences) + 1
+        checkpointPreferences()
     end
     return pages
 end
@@ -780,7 +799,11 @@ refreshSlots = function()
 
     desktopKeys, desktopRecords = Actions.desktop()
     defaults = Actions.splitDesktop(desktopKeys, desktopRecords)
-    livePages = savedPages()
+    if spellRanksDirty then
+        spellRanks = Actions.spellRanks()
+        spellRanksDirty = false
+    end
+    livePages = savedPages(true)
     local activeIndex = pageIndex(preferences.mobileArcPage, #livePages)
 
     for index, page in ipairs(livePages) do
@@ -888,13 +911,13 @@ for _, event in ipairs({
     "PLAYER_SPECIALIZATION_CHANGED", "UPDATE_CHAT_WINDOWS", "UPDATE_FLOATING_CHAT_WINDOWS",
     "CHAT_MSG_WHISPER", "CHAT_MSG_BN_WHISPER",
     "ACTIONBAR_UPDATE_COOLDOWN", "ACTIONBAR_UPDATE_USABLE", "BAG_UPDATE_DELAYED",
-    "SPELLS_CHANGED", "UPDATE_BONUS_ACTIONBAR", "UPDATE_OVERRIDE_ACTIONBAR",
+    "SPELLS_CHANGED", "SPELL_TEXT_UPDATE", "UPDATE_BONUS_ACTIONBAR", "UPDATE_OVERRIDE_ACTIONBAR",
     "SPELL_UPDATE_COOLDOWN", "SPELL_UPDATE_CHARGES", "SPELL_UPDATE_USABLE", "BAG_UPDATE_COOLDOWN",
 }) do
     events:RegisterEvent(event)
 end
 
-events:SetScript("OnEvent", function(_, event)
+events:SetScript("OnEvent", function(_, event, spellID)
     if event == "PLAYER_LOGIN" then
         loadHudPreferences()
     elseif event == "PLAYER_LOGOUT" then
@@ -926,6 +949,11 @@ events:SetScript("OnEvent", function(_, event)
         layoutHUD()
     elseif event == "CHAT_MSG_WHISPER" or event == "CHAT_MSG_BN_WHISPER" then
         Chat.whisper()
+    elseif event == "SPELLS_CHANGED" or event == "SPELL_TEXT_UPDATE" then
+        if event == "SPELLS_CHANGED" or (spellRanks and not isSecret(spellID) and spellRanks.pending[spellID]) then
+            spellRanksDirty = true
+            if preferences then queueRefresh(true) end
+        end
     elseif event == "EDIT_MODE_LAYOUTS_UPDATED" or event == "PLAYER_SPECIALIZATION_CHANGED"
             or event == "UPDATE_CHAT_WINDOWS" or event == "UPDATE_FLOATING_CHAT_WINDOWS" then
         Chat.queueLayout()

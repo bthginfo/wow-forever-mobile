@@ -828,4 +828,113 @@ timerCallbacks[1]()
 assert(visits == 2, "rebinding updates each visible slot once")
 C_Timer.After = immediate
 
-print("Passed: arc autosave and recovery, saved switches, cooldowns and charges, item counts, event batching, picker paging, professions, chat docking, whisper alerts and frame limiting.")
+-- Saved spell IDs may refer to ranks that no longer appear in the current spellbook view.
+local knownRanks = {
+    [201] = { name = "Heilung", text = "Rang 1" },
+    [211] = { name = "Heilung", text = "Rang 2" },
+    [205] = { name = "Heilung", text = "Rang 10" },
+    [251] = { name = "Heilung", text = "Rang 11" },
+    [254] = { name = "Heilung", text = "Rang 12" },
+    [255] = { name = "Heilung", text = "Rang 13" },
+    [256] = { name = "Heilung", text = "Rang 14" },
+    [257] = { name = "Heilung" },
+    [258] = { name = "Heilung", text = "Rang 16" },
+    [301] = { name = "Smelting", text = "" },
+    [401] = { name = "Anregen", text = "Rang 3" },
+    [402] = { name = "Anregen", text = "Stufe 4" },
+}
+C_Spell.GetSpellName = function(id) return knownRanks[id] and knownRanks[id].name end
+C_Spell.GetSpellSubtext = function(id) return knownRanks[id] and knownRanks[id].text end
+local function spellEntry(id, lowRank)
+    return { itemType = 1, actionID = id, spellID = id, name = knownRanks[id].name,
+        subName = knownRanks[id].text, lowRank = lowRank }
+end
+local rankBook = { spellEntry(211), spellEntry(251), spellEntry(254), spellEntry(255),
+    spellEntry(256), spellEntry(301), spellEntry(402) }
+rankBook[2].isPassive, rankBook[3].isOffSpec, rankBook[4].itemType = true, true, 2
+rankBook[5].notLearned = true
+local scans = 0
+C_SpellBook.GetNumSpellBookSkillLines = function() scans = scans + 1; return 1 end
+C_SpellBook.GetSpellBookSkillLineInfo = function() return { itemIndexOffset = 0, numSpellBookItems = #rankBook } end
+C_SpellBook.GetSpellBookItemInfo = function(slot, bank) assert(bank == 0); return rankBook[slot] end
+C_SpellBook.IsSpellKnown = function(id, bank) assert(bank == 0); return id ~= 256 end
+C_SpellBook.IsSpellBookItemLowRank = function(slot, bank) assert(bank == 0); return rankBook[slot].lowRank == true end
+
+local rankedProfile = {
+    mobileSlots = { left = {{ kind = "spell", id = 201 }, { kind = "spell", id = 401 }},
+        right = {{ kind = "item", id = 201 }} },
+    mobileArcPositions = { left = { x = .25, y = .55 } },
+    mobileArcPages = {{ slots = { left = {{ kind = "spell", id = 301 }, { kind = "desktop", key = "spell:201:" }},
+        right = {{ kind = "spell", id = 201 }} }, positions = { right = { x = .4, y = .6 } } }},
+}
+local rankAddon = login(first, rankedProfile)
+assert(registered.SPELLS_CHANGED)
+assert(frames.ForeverTouchLeftAction1.attributes.spell == 211, "login upgrades a legacy ID outside the spellbook view")
+assert(frames.ForeverTouchRightSet2Action1.attributes.spell == 211, "login also upgrades the inactive set")
+assert(frames.ForeverTouchLeftSet2Action1.attributes.spell == 301, "unranked profession actions stay bound")
+assert(frames.ForeverTouchLeftSet2Action2.attributes.spell == 211, "a saved desktop reference survives a desktop rank change")
+assert(frames.ForeverTouchLeftAction2.attributes.spell == 401, "different subtext series are not treated as ranks of the same ability")
+assert(frames.ForeverTouchRightAction1.attributes.item == "item:201", "an item with the same ID does not change")
+assert(ForeverTouchPreferences.mobileArcPositions.left.y == .55
+    and ForeverTouchPreferences.mobileArcPages[1].positions.right.x == .4)
+assert(ForeverTouchProfiles[first].mobileArcPages[1].slots.right[1].id == 211 and reloads == 0)
+
+local scansAtLogin = scans
+event(nil, "SPELL_UPDATE_USABLE")
+event(nil, "SPELL_UPDATE_COOLDOWN")
+event(nil, "ACTIONBAR_SLOT_CHANGED")
+assert(scans == scansAtLogin, "cooldowns and desktop changes must not rescan the spellbook")
+
+rankBook[1].lowRank = true
+rankBook[#rankBook + 1] = spellEntry(205)
+spellTimers[205] = { source = "rank-10" }
+combat = true
+event(nil, "SPELLS_CHANGED")
+assert(frames.ForeverTouchLeftAction1.attributes.spell == 211 and scans == scansAtLogin
+    and ForeverTouchPreferences.mobileSlots.left[1].id == 211, "combat defers the rank update")
+combat = false
+event(nil, "PLAYER_REGEN_ENABLED")
+assert(frames.ForeverTouchLeftAction1.attributes.spell == 205 and frames.ForeverTouchRightSet2Action1.attributes.spell == 205,
+    "learning a higher rank rebinds both sets at the first safe time")
+assert(frames.ForeverTouchLeftAction1.cooldown.timer == spellTimers[205], "the upgraded spell supplies its cooldown")
+assert(ForeverTouchPreferences.mobileSlots.left[1].id == 205 and reloads == 0)
+assert(scans == scansAtLogin + 1)
+for _, choice in ipairs(rankAddon.actions.spellChoices()) do
+    assert(choice.id ~= 211, "the spell picker shows the highest known rank")
+end
+local revision = ForeverTouchPreferences.revision
+event(nil, "SPELLS_CHANGED")
+assert(ForeverTouchPreferences.revision == revision, "rechecking a current profile is idempotent")
+
+local rankTen = rankBook[#rankBook]
+rankTen.lowRank = true
+local rankFifteen = spellEntry(257)
+rankBook[#rankBook + 1] = rankFifteen
+event(nil, "SPELLS_CHANGED")
+assert(frames.ForeverTouchLeftAction1.attributes.spell == 205, "a rank with unavailable text is not guessed")
+knownRanks[257].text = "Rang 15"
+event(nil, "SPELL_TEXT_UPDATE", 257)
+assert(frames.ForeverTouchLeftAction1.attributes.spell == 257 and reloads == 0,
+    "a trainer purchase with late spell data upgrades as soon as the rank can be read")
+
+click("OpenEditor")
+rankFifteen.lowRank = true
+rankBook[#rankBook + 1] = spellEntry(258)
+event(nil, "SPELLS_CHANGED")
+assert(frames.ForeverTouchLeftAction1.attributes.spell == 257, "an open editor defers the rank upgrade")
+click("CancelEditor")
+assert(frames.ForeverTouchLeftAction1.attributes.spell == 258 and reloads == 0)
+local upgraded = copy(ForeverTouchPreferences)
+local upgradedAccount = copy(ForeverTouchProfiles)
+login(first, upgraded, upgradedAccount)
+assert(frames.ForeverTouchRightSet2Action1.attributes.spell == 258, "an upgraded inactive set survives logging in again")
+
+-- An untouched default arc follows the current desktop layout and upgrades just its cast button.
+GetActionInfo = function(slot) if slot == 1 then return "spell", 201 end end
+login(first)
+assert(frames.ForeverTouchRightAction1.attributes.spell == 258
+    and not frames.ForeverTouchRightAction1.attributes.action
+    and not ForeverTouchPreferences.mobileSlots and reloads == 0)
+assert(select(2, GetActionInfo(1)) == 201, "the desktop action still has its original rank")
+
+print("Passed: arc autosave and recovery, saved switches, spell rank upgrades, cooldowns and charges, item counts, event batching, picker paging, professions, chat docking, whisper alerts and frame limiting.")

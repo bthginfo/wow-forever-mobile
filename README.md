@@ -111,6 +111,8 @@ Open **More controls → Edit skills → Add set**. Each set has its own left an
 
 Starting with .18, spell and item icons show a circular cooldown sweep and the remaining time. Brief cooldowns under two seconds show the sweep alone. Spells with charges show the time until the next charge while recharging.
 
+Forever Touch checks the spellbook when you log in and when you learn spells. It upgrades existing arc slots in every set to the highest learned rank of that spell. An upgrade during combat takes effect after combat.
+
 Arc edits apply as soon as you make them. Tap **Done** or use Android Back to close the editor. WoW writes the changes together with one short interface reload and displays **Arc layout saved** after loading them again. During combat, the reload waits until combat ends. A normal WoW logout also writes completed edits from an open editor. **Discard** restores the layout you started editing.
 
 To bind a learned entry such as Smelting or Fishing, open **More controls → Edit skills**, tap **+** and choose **Professions** in the slot picker.

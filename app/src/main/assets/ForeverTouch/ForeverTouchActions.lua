@@ -108,13 +108,16 @@ function Actions.splitDesktop(ordered, records, preferred)
     return profile
 end
 
+local function isDesktopSpell(record)
+    return record and record.kind == "spell" and record.subtype ~= "pet" and record.subtype ~= "flyout"
+end
+
 function Actions.independentProfile(profile, records)
     local copy = Actions.copyProfile(profile)
     for _, side in ipairs(Actions.sides) do
         for index, binding in ipairs(copy[side]) do
             local record = binding.kind == "desktop" and records[binding.key]
-            if record and validID(record.id) and (record.kind == "item" or
-                    (record.kind == "spell" and record.subtype ~= "pet" and record.subtype ~= "flyout")) then
+            if record and validID(record.id) and (record.kind == "item" or isDesktopSpell(record)) then
                 copy[side][index] = { kind = record.kind, id = record.id }
             end
         end
@@ -277,8 +280,12 @@ local function sortedChoices(choices)
     return choices
 end
 
-local function appendSpellChoice(choices, seen, entry, spellType)
-    if not entry or entry.itemType ~= spellType or entry.isPassive or entry.isOffSpec then return end
+local function activeBookSpell(entry, spellType)
+    return not isSecret(entry) and type(entry) == "table" and entry.itemType == spellType
+        and not entry.isPassive and not entry.isOffSpec
+end
+
+local function appendSpellChoice(choices, seen, entry)
     local id = entry.actionID or entry.spellID
     if not validID(id) or seen[id] then return end
 
@@ -290,21 +297,107 @@ local function appendSpellChoice(choices, seen, entry, spellType)
     choices[#choices + 1] = binding
 end
 
-function Actions.spellChoices()
+local function visitPlayerSpells(visit)
     local book = C_SpellBook
     local bank = Enum and Enum.SpellBookSpellBank and Enum.SpellBookSpellBank.Player
     local spellType = Enum and Enum.SpellBookItemType and Enum.SpellBookItemType.Spell
-    local choices, seen = {}, {}
-    if not book or not book.GetNumSpellBookSkillLines or not bank or not spellType then return choices end
+    if not book or not book.GetNumSpellBookSkillLines or not book.GetSpellBookSkillLineInfo
+            or not book.GetSpellBookItemInfo or not bank or not spellType then return end
     for line = 1, book.GetNumSpellBookSkillLines() do
         local info = book.GetSpellBookSkillLineInfo(line)
         if info and not info.shouldHide and not info.offSpecID then
             for slot = info.itemIndexOffset + 1, info.itemIndexOffset + info.numSpellBookItems do
-                appendSpellChoice(choices, seen, book.GetSpellBookItemInfo(slot, bank), spellType)
+                local entry = book.GetSpellBookItemInfo(slot, bank)
+                if activeBookSpell(entry, spellType) then visit(entry, book, slot, bank) end
             end
         end
     end
+end
+
+local function lowerBookRank(book, slot, bank)
+    return book.IsSpellBookItemLowRank and book.IsSpellBookItemLowRank(slot, bank)
+end
+
+function Actions.spellChoices()
+    local choices, seen = {}, {}
+    visitPlayerSpells(function(entry, book, slot, bank)
+        if not lowerBookRank(book, slot, bank) then appendSpellChoice(choices, seen, entry) end
+    end)
     return sortedChoices(choices)
+end
+
+local function readableText(text)
+    return not isSecret(text) and type(text) == "string" and text ~= ""
+end
+
+local function spellRank(index, id, name, subtext)
+    local cached = index.byID[id]
+    if cached ~= nil then return cached or nil end
+    if not readableText(name) and spell.GetSpellName then name = spell.GetSpellName(id) end
+    if not readableText(subtext) and spell.GetSpellSubtext then subtext = spell.GetSpellSubtext(id) end
+    index.byID[id] = false
+    if not readableText(name) or not readableText(subtext) then
+        index.pending[id] = true
+        return
+    end
+
+    -- Keep both halves of the localized rank label so different subtexts do not match.
+    local prefix, digits, suffix = subtext:match("^(%D*)(%d+)(%D*)$")
+    local rank = tonumber(digits)
+    if not rank or rank <= 0 or rank == math.huge then return end
+    local info = { family = name .. "\0" .. prefix .. "\0" .. suffix, rank = rank, id = id }
+    index.byID[id] = info
+    return info
+end
+
+function Actions.spellRanks()
+    local index = { byID = {}, best = {}, pending = {} }
+    visitPlayerSpells(function(entry, book, slot, bank)
+        local id = entry.actionID or entry.spellID
+        if not validID(id) or isSecret(entry.spellID) or (entry.spellID and entry.spellID ~= id)
+                or (book.IsSpellKnown and not book.IsSpellKnown(id, bank)) then return end
+        local info = spellRank(index, id, entry.name, entry.subName)
+        if not info then return end
+        local lowerRank = lowerBookRank(book, slot, bank)
+        if lowerRank then return end
+        info.alreadyHighest = lowerRank == false
+        local best = index.best[info.family]
+        if not best or info.rank > best.rank then
+            index.best[info.family] = info
+        elseif info.rank == best.rank and id ~= best.id then
+            best.ambiguous = true
+        end
+    end)
+    return index
+end
+
+local function arcSpellID(binding, records)
+    if binding.kind == "spell" then return binding.id end
+    if binding.kind ~= "desktop" then return end
+    local record = records[binding.key]
+    if record then return isDesktopSpell(record) and record.id end
+    -- Older saved sets can still point to a desktop slot that now has a different rank.
+    local id, subtype = binding.key:match("^spell:(%d+):([^:]*)$")
+    if subtype ~= "pet" and subtype ~= "flyout" then return tonumber(id) end
+end
+
+function Actions.upgradeSpellRanks(profile, records, index)
+    if not index or not next(index.best) then return false end
+    local changed = false
+    for _, side in ipairs(Actions.sides) do
+        for slot, binding in ipairs(profile[side]) do
+            local id = arcSpellID(binding, records)
+            if validID(id) then
+                local current = spellRank(index, id)
+                local best = current and index.best[current.family]
+                if best and not best.ambiguous and not current.alreadyHighest and best.rank > current.rank then
+                    profile[side][slot] = { kind = "spell", id = best.id }
+                    changed = true
+                end
+            end
+        end
+    end
+    return changed
 end
 
 function Actions.professionChoices()
@@ -323,7 +416,8 @@ function Actions.professionChoices()
                 local _, _, _, _, count, offset = GetProfessionInfo(profession)
                 if number(count) > 0 and not isSecret(offset) and type(offset) == "number" and offset >= 0 then
                     for slot = offset + 1, offset + count do
-                        appendSpellChoice(choices, seen, book.GetSpellBookItemInfo(slot, bank), spellType)
+                        local entry = book.GetSpellBookItemInfo(slot, bank)
+                        if activeBookSpell(entry, spellType) then appendSpellChoice(choices, seen, entry) end
                     end
                 end
             end
