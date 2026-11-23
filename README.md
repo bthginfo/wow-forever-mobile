@@ -1,13 +1,13 @@
 # WoW Forever Mobile
 
-## Android downloads · .25
+## Android downloads · .26
 
 | APK | Devices |
 | --- | --- |
-| [Standard Android .25](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.25/WoW-Forever-Mobile-2.4.4-mobile.25-Standard.apk) | Snapdragon 8 series with Adreno 7xx or 8xx |
-| [Pixel .25](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.25/WoW-Forever-Mobile-2.4.4-mobile.25-Pixel.apk) | Pixel 9 and 10 families and the original Pixel Fold (2023) |
+| [Standard Android .26](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.26/WoW-Forever-Mobile-2.4.4-mobile.26-Standard.apk) | Snapdragon 8 series with Adreno 7xx or 8xx |
+| [Pixel .26](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.26/WoW-Forever-Mobile-2.4.4-mobile.26-Pixel.apk) | Pixel 9 and 10 families and the original Pixel Fold (2023) |
 
-**Android 10+ · ARM64** · [.25 release](https://github.com/bthginfo/wow-forever-mobile/releases/tag/v2.4.4-mobile.25)
+**Android 10+ · ARM64** · [.26 release](https://github.com/bthginfo/wow-forever-mobile/releases/tag/v2.4.4-mobile.26)
 
 **Coming from .24?** The new signing certificate requires a one-time reinstall. Follow the steps below to reuse your existing WoW folder.
 
@@ -56,7 +56,9 @@ The launcher downloads the matching `_forever_/Wow-ARM64.exe` from Blizzard when
 
 ### Update an existing installation
 
-When moving from .24 or an earlier Preview with the same app ID, back up `_forever_/WTF` in your WoW folder and keep the game folder. Uninstall the old launcher and install the matching .25 APK. Open **Find existing game files** and point .25 to that folder. You will set your launcher preferences again.
+If you already have .25, install the matching .26 APK as an update.
+
+When moving from .24 or an earlier Preview with the same app ID, back up `_forever_/WTF` in your WoW folder and keep the game folder. Uninstall the old launcher and install the matching .26 APK. Open **Find existing game files** and select that folder. You will set your launcher preferences again.
 
 ### Pixel graphics profiles
 
@@ -131,7 +133,7 @@ Fullscreen is on by default. Open **More controls** in the game toolbar to enter
 
 ## Build from source
 
-The [source for both .25 APKs](https://github.com/bthginfo/wow-forever-mobile/tree/v2.4.4-mobile.25) has its own build instructions and Forever Touch tests.
+The [source for both .26 APKs](https://github.com/bthginfo/wow-forever-mobile/tree/v2.4.4-mobile.26) has its own build instructions and Forever Touch tests.
 
 Use JDK 17, Android SDK Platform 36, build-tools 35.0.0, and NDK 27.3.13750724. Point `local.properties` at your Android SDK. For a fresh checkout, build the ARM64 Wine login helper into `app/src/main/assets/wow-session-bridge.exe`. [Helper build and test instructions](tools/wow-session-bridge/README.md)
 
