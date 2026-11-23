@@ -54,8 +54,8 @@ android {
 
         manifestPlaceholders["screenOrientation"] = "unspecified"
         manifestPlaceholders["mobileAppLabel"] = when {
-            previewBuild && pixelVulkanTestBuild -> "WoW Forever Pixel Preview"
-            previewBuild -> "WoW Forever Preview"
+            previewBuild && pixelVulkanTestBuild -> "WoW Forever Mobile Pixel"
+            previewBuild -> "@string/mobile_app_name"
             pixelVulkanTestBuild -> "WoW Forever Mobile Pixel Test"
             standaloneBuild -> "WoW Forever Mobile Standalone"
             else -> "@string/mobile_app_name"
