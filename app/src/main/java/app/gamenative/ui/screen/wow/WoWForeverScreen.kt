@@ -64,11 +64,9 @@ import app.gamenative.ui.theme.WowGold
 import app.gamenative.ui.theme.WowMuted
 import app.gamenative.ui.theme.WowSubtle
 import app.gamenative.ui.util.SnackbarManager
-import app.gamenative.utils.AppUpdater
 import app.gamenative.utils.BrightnessManager
 import app.gamenative.utils.Net
 import app.gamenative.utils.StorageUtils
-import app.gamenative.utils.renderReleaseNotes
 import com.winlator.container.Container
 import com.winlator.container.ContainerManager
 import com.winlator.contents.ContentProfile
@@ -123,66 +121,7 @@ internal fun WoWForeverScreen(
     var showDiagnostics by remember { mutableStateOf(false) }
     var isUpdating by remember { mutableStateOf(false) }
     var updateStatusText by remember { mutableStateOf("") }
-    var appUpdate by remember { mutableStateOf<AppUpdater.Release?>(null) }
-    var isDownloadingAppUpdate by remember { mutableStateOf(false) }
-    var appUpdateProgress by remember { mutableFloatStateOf(0f) }
-    var showAppUpdateDialog by remember { mutableStateOf(false) }
-    var showAppUpdatePermissionDialog by remember { mutableStateOf(false) }
-    var pendingInstallPermission by remember { mutableStateOf(false) }
-    var downloadedApk by remember { mutableStateOf<File?>(null) }
     var showUpgradeDialog by remember { mutableStateOf(false) }
-
-    suspend fun fetchAppUpdate(): AppUpdater.Release? {
-        val release = AppUpdater.check()
-        appUpdate = release
-        if (release != null) {
-            showAppUpdateDialog = true
-        }
-        return release
-    }
-
-    fun checkAppUpdate() {
-        scope.launch { fetchAppUpdate() }
-    }
-
-    fun installOrRequestPermission(apk: File) {
-        if (AppUpdater.canInstall(context)) {
-            AppUpdater.install(context, apk)
-        } else {
-            pendingInstallPermission = true
-            showAppUpdatePermissionDialog = true
-        }
-    }
-
-    fun performAppUpdate() {
-        val target = appUpdate ?: return
-        if (isDownloadingAppUpdate) return
-        downloadedApk?.takeIf { it.exists() && it.length() == target.sizeBytes }?.let { apk ->
-            installOrRequestPermission(apk)
-            return
-        }
-        isDownloadingAppUpdate = true
-        appUpdateProgress = 0f
-        errorMessage = null
-        scope.launch {
-            try {
-                val apk = AppUpdater.download(context, target) { progress ->
-                    appUpdateProgress = progress
-                }
-                downloadedApk = apk
-                isDownloadingAppUpdate = false
-                installOrRequestPermission(apk)
-            } catch (e: Exception) {
-                Timber.e(e, "Error downloading app update")
-                errorMessage = context.getString(
-                    R.string.mobile_launcher_error_details,
-                    context.getString(R.string.mobile_launcher_app_update_failed),
-                    e.message.orEmpty(),
-                )
-                isDownloadingAppUpdate = false
-            }
-        }
-    }
 
     fun checkVersionStatus() {
         versionCheckJob?.cancel()
@@ -270,10 +209,6 @@ internal fun WoWForeverScreen(
         if (!isUpdating && !isLaunching) gamePath = GamePath.load(context)
         checkFiles()
         if (!isLaunching) statusText = ""
-        if (pendingInstallPermission && AppUpdater.canInstall(context)) {
-            pendingInstallPermission = false
-            downloadedApk?.takeIf { it.exists() }?.let { AppUpdater.install(context, it) }
-        }
         if (!isLaunching && !isUpdating && files.isReady && versionStatus == null && versionCheckJob?.isActive != true) {
             checkVersionStatus()
         }
@@ -413,10 +348,7 @@ internal fun WoWForeverScreen(
         val ready = checkFiles()
         if (!files.hasStorageAccess) showStoragePermissionDialog = true
         if (files.isLegacyBeta) showUpgradeDialog = true
-        if (ready) {
-            checkVersionStatus()
-            checkAppUpdate()
-        }
+        if (ready) checkVersionStatus()
     }
 
     Box(
@@ -491,12 +423,7 @@ internal fun WoWForeverScreen(
                             ready = files.hasForever,
                         )
                         CheckItem(label = stringResource(R.string.mobile_launcher_storage_access), ready = files.hasStorageAccess)
-                        appUpdate?.let {
-                            CheckItem(
-                                label = stringResource(R.string.mobile_launcher_app_build_update, BuildConfig.VERSION_NAME, it.version),
-                                ready = false,
-                            )
-                        } ?: CheckItem(
+                        CheckItem(
                             label = stringResource(R.string.mobile_launcher_app_build, BuildConfig.VERSION_NAME),
                             ready = true,
                         )
@@ -592,49 +519,6 @@ internal fun WoWForeverScreen(
                 }
             }
 
-            appUpdate?.let { update ->
-                Spacer(modifier = Modifier.height(16.dp))
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth(0.9f)
-                        .border(1.dp, WowGold.copy(alpha = 0.6f), RoundedCornerShape(16.dp)),
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF1E2838).copy(alpha = 0.85f)),
-                    shape = RoundedCornerShape(16.dp),
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Refresh, contentDescription = null, tint = WowGold, modifier = Modifier.size(20.dp))
-                            Spacer(modifier = Modifier.width(8.dp))
-                            SectionTitle(stringResource(R.string.mobile_launcher_app_update_available, update.version), WowGold)
-                        }
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = stringResource(R.string.mobile_launcher_app_update_info),
-                            fontSize = 12.sp,
-                            color = Color(0xFFCBD5E1),
-                            lineHeight = 16.sp,
-                        )
-                        Spacer(modifier = Modifier.height(10.dp))
-                        PrimaryButton(
-                            text = when {
-                                isDownloadingAppUpdate -> stringResource(R.string.mobile_launcher_download_app)
-                                downloadedApk?.exists() == true -> stringResource(R.string.mobile_launcher_install_app, update.version)
-                                else -> stringResource(R.string.mobile_launcher_update_app, update.version)
-                            },
-                            icon = Icons.Default.Refresh,
-                            enabled = !isDownloadingAppUpdate && !isLaunching && !isUpdating,
-                            onClick = {
-                                if (downloadedApk?.exists() == true) {
-                                    performAppUpdate()
-                                } else {
-                                    showAppUpdateDialog = true
-                                }
-                            },
-                        )
-                    }
-                }
-            }
-
             Spacer(modifier = Modifier.height(24.dp))
 
             Column(
@@ -721,7 +605,6 @@ internal fun WoWForeverScreen(
                         LinkButton(stringResource(R.string.mobile_launcher_refresh), Icons.Default.Refresh) {
                             checkFiles()
                             checkVersionStatus()
-                            checkAppUpdate()
                         }
                         if (!files.needsInstall) {
                             LinkButton(stringResource(R.string.mobile_launcher_location), Icons.Default.FolderOpen) { folderPicker.launch(null) }
@@ -738,7 +621,7 @@ internal fun WoWForeverScreen(
                         }
                         LinkButton(
                             stringResource(R.string.language), Icons.Default.Language,
-                            enabled = !isDownloadingAppUpdate, onClick = onOpenLanguage,
+                            onClick = onOpenLanguage,
                         )
                     }
                 }
@@ -814,123 +697,6 @@ internal fun WoWForeverScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showStoragePermissionDialog = false }) {
-                    Text(stringResource(R.string.cancel), color = WowMuted)
-                }
-            },
-            containerColor = Color(0xFF1B2838),
-            shape = RoundedCornerShape(16.dp),
-        )
-    }
-
-    if (showAppUpdateDialog) {
-        appUpdate?.let { update ->
-            AlertDialog(
-                onDismissRequest = {
-                    if (!isDownloadingAppUpdate) showAppUpdateDialog = false
-                },
-                title = {
-                    Text(
-                        text = stringResource(R.string.mobile_launcher_app_update_available, update.version),
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 17.sp,
-                        color = WowGold,
-                    )
-                },
-                text = {
-                    Column {
-                        if (update.notes.isNotBlank()) {
-                            Text(
-                                text = renderReleaseNotes(update.notes),
-                                fontSize = 12.sp,
-                                color = Color(0xFFCBD5E1),
-                                lineHeight = 16.sp,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .heightIn(max = 240.dp)
-                                    .verticalScroll(rememberScrollState()),
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                        }
-                        if (isDownloadingAppUpdate) {
-                            Text(
-                                text = stringResource(R.string.mobile_launcher_percent, (appUpdateProgress * 100).toInt()),
-                                fontSize = 12.sp,
-                                color = WowGold,
-                                fontWeight = FontWeight.Bold,
-                            )
-                            Spacer(modifier = Modifier.height(8.dp))
-                            LinearProgressIndicator(
-                                progress = { appUpdateProgress },
-                                modifier = Modifier.fillMaxWidth(),
-                                color = WowGold,
-                            )
-                        }
-                    }
-                },
-                confirmButton = {
-                    Button(
-                        onClick = ::performAppUpdate,
-                        enabled = !isDownloadingAppUpdate,
-                        colors = ButtonDefaults.buttonColors(containerColor = WowBronze, contentColor = Color.White),
-                        shape = RoundedCornerShape(10.dp),
-                    ) {
-                        Text(
-                            text = when {
-                                isDownloadingAppUpdate -> stringResource(R.string.mobile_launcher_download_app)
-                                downloadedApk?.exists() == true -> stringResource(R.string.install)
-                                else -> stringResource(R.string.mobile_launcher_update_now)
-                            },
-                            fontWeight = FontWeight.Bold,
-                        )
-                    }
-                },
-                dismissButton = {
-                    if (!isDownloadingAppUpdate) {
-                        TextButton(onClick = { showAppUpdateDialog = false }) {
-                            Text(stringResource(R.string.mobile_launcher_later), color = WowMuted)
-                        }
-                    }
-                },
-                containerColor = Color(0xFF1B2838),
-                shape = RoundedCornerShape(16.dp),
-            )
-        }
-    }
-
-    if (showAppUpdatePermissionDialog) {
-        AlertDialog(
-            onDismissRequest = { showAppUpdatePermissionDialog = false },
-            title = {
-                Text(
-                    text = stringResource(R.string.mobile_launcher_install_permission),
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 17.sp,
-                    color = WowGold,
-                )
-            },
-            text = {
-                Text(
-                    text = stringResource(R.string.mobile_launcher_install_permission_details),
-                    fontSize = 13.sp,
-                    color = Color(0xFFE2E8F0),
-                    lineHeight = 18.sp,
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showAppUpdatePermissionDialog = false
-                        pendingInstallPermission = true
-                        AppUpdater.openInstallPermissionSettings(context)
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = WowBronze, contentColor = Color.White),
-                    shape = RoundedCornerShape(10.dp),
-                ) {
-                    Text(stringResource(R.string.mobile_launcher_open_settings), fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showAppUpdatePermissionDialog = false }) {
                     Text(stringResource(R.string.cancel), color = WowMuted)
                 }
             },

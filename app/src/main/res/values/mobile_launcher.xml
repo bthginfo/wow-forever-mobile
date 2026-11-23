@@ -13,7 +13,6 @@
     <string name="mobile_launcher_product_info">Install info (%1$s · %2$s required)</string>
     <string name="mobile_launcher_storage_access">All files access</string>
     <string name="mobile_launcher_app_build">App version · %1$s</string>
-    <string name="mobile_launcher_app_build_update">App version · %1$s (%2$s available)</string>
     <string name="mobile_launcher_client_build">Client build · %1$s (up to date)</string>
     <string name="mobile_launcher_client_build_update">Client build · %1$s (%2$s available)</string>
     <string name="mobile_launcher_path">Game folder · %1$s</string>
@@ -28,11 +27,6 @@
     <string name="mobile_launcher_update_required">Game update required</string>
     <string name="mobile_launcher_update_build">The servers require build %1$s. You have %2$s installed. Updating may fix sign-in and realm connection errors.</string>
     <string name="mobile_launcher_update_instructions">Tap Update to download the latest files from Blizzard over Wi-Fi.</string>
-    <string name="mobile_launcher_app_update_available">App update available (%1$s)</string>
-    <string name="mobile_launcher_app_update_info">Open the release notes to download the new app version.</string>
-    <string name="mobile_launcher_download_app">Downloading app update…</string>
-    <string name="mobile_launcher_install_app">Install %1$s</string>
-    <string name="mobile_launcher_update_app">Update app to %1$s</string>
     <string name="mobile_launcher_grant_storage">Grant storage access</string>
     <string name="mobile_launcher_upgrade">Upgrade to full release</string>
     <string name="mobile_launcher_download_install">Download and install</string>
@@ -51,10 +45,6 @@
     <string name="mobile_launcher_storage_title">Storage access required</string>
     <string name="mobile_launcher_storage_details">Allow access to all files in the next screen so WoW Forever can read and update your game folder.</string>
     <string name="mobile_launcher_open_settings">Open settings</string>
-    <string name="mobile_launcher_percent">Downloading · %1$d%%</string>
-    <string name="mobile_launcher_update_now">Update now</string>
-    <string name="mobile_launcher_install_permission">Install permission required</string>
-    <string name="mobile_launcher_install_permission_details">Enable Allow from this source in Android settings to install the app update.</string>
     <string name="mobile_launcher_install_game">Install World of Warcraft</string>
     <string name="mobile_launcher_beta_install">Upgrade to install the full release in %1$s/. Your game data is reused. The ARM64 client download is about 100 MB.</string>
     <string name="mobile_launcher_install_details">Download the ARM64 client and archive indexes (about 250 MB). The game downloads more data as you play, and the folder can grow beyond 50 GB.</string>
@@ -65,7 +55,6 @@
     <string name="mobile_launcher_prepare">Preparing components…</string>
     <string name="mobile_launcher_starting">Starting World of Warcraft…</string>
     <string name="mobile_launcher_start_failed">WoW could not start</string>
-    <string name="mobile_launcher_app_update_failed">Could not download the app update</string>
     <string name="mobile_launcher_addon_installed">Installed · %1$s</string>
     <string name="mobile_launcher_addon_failed">Could not import the add-on</string>
     <string name="mobile_launcher_file_error">Could not open the selected file</string>

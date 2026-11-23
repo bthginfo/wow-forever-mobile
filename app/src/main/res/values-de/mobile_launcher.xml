@@ -12,7 +12,6 @@
     <string name="mobile_launcher_product_info">Installationsinfo (%1$s · %2$s erforderlich)</string>
     <string name="mobile_launcher_storage_access">Zugriff auf alle Dateien</string>
     <string name="mobile_launcher_app_build">App-Version · %1$s</string>
-    <string name="mobile_launcher_app_build_update">App-Version · %1$s (%2$s verfügbar)</string>
     <string name="mobile_launcher_client_build">Client-Build · %1$s (aktuell)</string>
     <string name="mobile_launcher_client_build_update">Client-Build · %1$s (%2$s verfügbar)</string>
     <string name="mobile_launcher_path">Spielordner · %1$s</string>
@@ -27,11 +26,6 @@
     <string name="mobile_launcher_update_required">Spielupdate erforderlich</string>
     <string name="mobile_launcher_update_build">Die Server benötigen Build %1$s. Installiert ist %2$s. Das Update kann Anmelde- und Verbindungsfehler beheben.</string>
     <string name="mobile_launcher_update_instructions">Tippe auf Aktualisieren, um die neuesten Dateien von Blizzard per WLAN zu laden.</string>
-    <string name="mobile_launcher_app_update_available">App-Update verfügbar (%1$s)</string>
-    <string name="mobile_launcher_app_update_info">Öffne die Versionshinweise, um die neue App-Version herunterzuladen.</string>
-    <string name="mobile_launcher_download_app">App-Update wird geladen …</string>
-    <string name="mobile_launcher_install_app">%1$s installieren</string>
-    <string name="mobile_launcher_update_app">App auf %1$s aktualisieren</string>
     <string name="mobile_launcher_grant_storage">Dateizugriff erlauben</string>
     <string name="mobile_launcher_upgrade">Auf Vollversion wechseln</string>
     <string name="mobile_launcher_download_install">Laden und installieren</string>
@@ -50,10 +44,6 @@
     <string name="mobile_launcher_storage_title">Dateizugriff erforderlich</string>
     <string name="mobile_launcher_storage_details">Erlaube auf der nächsten Seite den Zugriff auf alle Dateien, damit WoW Forever den Spielordner lesen und aktualisieren kann.</string>
     <string name="mobile_launcher_open_settings">Einstellungen öffnen</string>
-    <string name="mobile_launcher_percent">Download · %1$d%%</string>
-    <string name="mobile_launcher_update_now">Jetzt aktualisieren</string>
-    <string name="mobile_launcher_install_permission">Installationsberechtigung erforderlich</string>
-    <string name="mobile_launcher_install_permission_details">Erlaube in den Android-Einstellungen die Installation aus dieser Quelle, um das App-Update zu installieren.</string>
     <string name="mobile_launcher_install_game">World of Warcraft installieren</string>
     <string name="mobile_launcher_beta_install">Das Upgrade installiert die Vollversion in %1$s/. Deine Spieldaten werden weiterverwendet. Der ARM64-Client ist rund 100 MB groß.</string>
     <string name="mobile_launcher_install_details">Der Launcher lädt den ARM64-Client und die Archivindizes (rund 250 MB). Beim Spielen werden weitere Spieldaten geladen. Der Ordner kann über 50 GB groß werden.</string>
@@ -64,7 +54,6 @@
     <string name="mobile_launcher_prepare">Komponenten werden vorbereitet …</string>
     <string name="mobile_launcher_starting">World of Warcraft wird gestartet …</string>
     <string name="mobile_launcher_start_failed">WoW konnte nicht starten</string>
-    <string name="mobile_launcher_app_update_failed">App-Update konnte nicht geladen werden</string>
     <string name="mobile_launcher_addon_installed">Installiert · %1$s</string>
     <string name="mobile_launcher_addon_failed">Add-on konnte nicht importiert werden</string>
     <string name="mobile_launcher_file_error">Ausgewählte Datei konnte nicht geöffnet werden</string>
