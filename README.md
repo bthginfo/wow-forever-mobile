@@ -1,15 +1,15 @@
 # WoW Forever Mobile
 
-## Android downloads · .24 Preview
+## Android downloads · .25
 
 | APK | Devices |
 | --- | --- |
-| [Standard Android .24](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.24-preview/WoW-Forever-Mobile-2.4.4-mobile.24-Standalone-Preview.apk) | Snapdragon 8 series with Adreno 7xx or 8xx |
-| [Pixel 9 and 10 .24](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.24-preview/WoW-Forever-Mobile-2.4.4-mobile.24-Pixel-Preview.apk) | Pixel 9 and 10 families listed below |
+| [Standard Android .25](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.25/WoW-Forever-Mobile-2.4.4-mobile.25-Standard.apk) | Snapdragon 8 series with Adreno 7xx or 8xx |
+| [Pixel .25](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.25/WoW-Forever-Mobile-2.4.4-mobile.25-Pixel.apk) | Pixel 9 and 10 families and the original Pixel Fold (2023) |
 
-**Android 10+ · ARM64** · [.24 release notes](https://github.com/bthginfo/wow-forever-mobile/releases/tag/v2.4.4-mobile.24-preview)
+**Android 10+ · ARM64** · [.25 release](https://github.com/bthginfo/wow-forever-mobile/releases/tag/v2.4.4-mobile.25)
 
-The original **Google Pixel Fold (2023)** has a separate test build that uses the Mali system Vulkan driver. Install it alongside the regular Pixel app and select your existing WoW folder. Testing on a physical Pixel Fold is pending. [Download the Fold test APK](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.24-pixel.1-fold-test.1/WoW-Forever-Pixel-Fold-Test.apk)
+**Coming from .24?** The new signing certificate requires a one-time reinstall. Follow the steps below to reuse your existing WoW folder.
 
 An Android launcher and touch interface for Blizzard’s Windows ARM64 WoW Forever client. The launcher runs the client on the phone using Wine/Proton. It includes a browser-based Battle.net login, Android keyboard and clipboard controls, and a configurable in-game touch HUD.
 
@@ -56,20 +56,21 @@ The launcher downloads the matching `_forever_/Wow-ARM64.exe` from Blizzard when
 
 ### Update an existing installation
 
-Open the matching .24 APK over .23 Preview and choose **Update** in Android. Your launcher settings, WoW folder and skill arc setup carry over. If you have .21, the preview installs alongside it. Use **Find existing game files** and select your WoW folder. [.21 downloads](https://github.com/bthginfo/wow-forever-mobile/releases/tag/v2.4.4-mobile.21)
+When moving from .24 or an earlier Preview with the same app ID, back up `_forever_/WTF` in your WoW folder and keep the game folder. Uninstall the old launcher and install the matching .25 APK. Open **Find existing game files** and point .25 to that folder. You will set your launcher preferences again.
 
-### Pixel 9 and 10
+### Pixel graphics profiles
 
-Use the **Pixel 9 and 10** APK for these models. The app selects the Android Vulkan driver for each family through the GameNative wrapper.
+Use the **Pixel** APK for these models. The app selects the Android Vulkan driver for each family through the GameNative wrapper.
 
 | Model | Graphics driver |
 | --- | --- |
 | Pixel 9, 9 Pro, 9 Pro XL and 9 Pro Fold | Mali system Vulkan |
+| Pixel Fold (2023) | Mali system Vulkan. Physical-device launch pending |
 | Pixel 10, 10 Pro, 10 Pro XL and 10 Pro Fold | PowerVR system Vulkan |
 
 A player confirmed the game starts on **Pixel 9 Pro XL with Android 17** using .16-pixel.5. Pixel 10 support is experimental and still needs an on-device game test.
 
-The APK appears as **WoW Forever Mobile Pixel Test** and can be installed alongside the standard app. Close the other launcher before starting WoW from the same folder.
+The APK appears as **WoW Forever Mobile Pixel** and can be installed alongside the standard app. Close the other launcher before starting WoW from the same folder.
 
 The Pixel build checks Direct3D 11 before opening Battle.net sign-in. If the graphics check fails, open **Startup and connection** and tap **Copy** to share the selected graphics profile, error code and available DXVK messages.
 
@@ -101,6 +102,8 @@ Open **More controls → Edit skills → Add set**. Each set has its own left an
 
 Starting with .18, spell and item icons show a circular cooldown sweep and the remaining time. Brief cooldowns under two seconds show the sweep alone. Spells with charges show the time until the next charge while recharging.
 
+Forever Touch checks the spellbook when you log in and when you learn spells. It upgrades existing arc slots in all sets to the highest learned rank of that spell. An upgrade during combat takes effect after combat.
+
 Arc edits apply as soon as you make them. Tap **Done** or use Android Back to close the editor. WoW writes the changes together with one short interface reload and displays **Arc layout saved** after loading them again. During combat, the reload waits until combat ends. A normal WoW logout also writes completed edits from an open editor. **Discard** restores the layout you started editing.
 
 To bind a learned entry such as Smelting or Fishing, open **More controls → Edit skills**, tap **+** and choose **Professions** in the slot picker.
@@ -128,7 +131,7 @@ Fullscreen is on by default. Open **More controls** in the game toolbar to enter
 
 ## Build from source
 
-The [source for both .24 APKs](https://github.com/bthginfo/wow-forever-mobile/tree/v2.4.4-mobile.24-preview) has its own build instructions and Forever Touch tests.
+The [source for both .25 APKs](https://github.com/bthginfo/wow-forever-mobile/tree/v2.4.4-mobile.25) has its own build instructions and Forever Touch tests.
 
 Use JDK 17, Android SDK Platform 36, build-tools 35.0.0, and NDK 27.3.13750724. Point `local.properties` at your Android SDK. For a fresh checkout, build the ARM64 Wine login helper into `app/src/main/assets/wow-session-bridge.exe`. [Helper build and test instructions](tools/wow-session-bridge/README.md)
 
