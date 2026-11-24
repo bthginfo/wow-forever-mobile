@@ -153,6 +153,10 @@ The APK is written to `app/build/outputs/apk/modern/release/`. The runtime downl
 
 A local release signing configuration can be provided in `app/keystores/keystore.properties`. Keep keystores and passwords outside version control. The default Gradle build uses application ID `app.wowforever.mobile.browser`.
 
+For an update to the .26 Standard APK, add `-PforeverStandalone=true -PforeverPreview=true` to the Gradle command. For the .26 Pixel APK, add `-PforeverPixelVulkanTest=true -PforeverPreview=true`. Both updates require the signing key used for .26.
+
+Before building Pixel, run `bash tools/dxvk-powervr/build.sh DXVK_SOURCE LLVM_MINGW_BIN` with the pinned DXVK checkout and the LLVM-MinGW toolchain. It puts `dxvk-2.4.1-wow-powervr.wcp` in `app/src/pixelTest/assets/bundled_components/`. Check that the Pixel APK contains this archive under `assets/bundled_components/`.
+
 ---
 
 ## Credits and how it works
