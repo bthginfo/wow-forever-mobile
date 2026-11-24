@@ -868,6 +868,9 @@ local clickBindings = {
         if ToggleGroupFinderFrame then ToggleGroupFinderFrame() end
     end),
 }
+if Chat.beginNativeTransfer then
+    clickBindings["CTRL-SHIFT-U"] = clickBinding("NativeChatTransfer", Chat.beginNativeTransfer)
+end
 if ArcSave then
     clickBindings["CTRL-SHIFT-END"] = clickBinding("AcceptArcSave", acceptToolbarSave)
     clickBindings["CTRL-SHIFT-DELETE"] = clickBinding("CancelArcTransfer", ArcSave.close)

@@ -1,6 +1,7 @@
 package app.gamenative.ui.screen.xserver
 
 import android.content.Context
+import android.graphics.RectF
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
@@ -48,6 +49,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -66,6 +69,7 @@ import app.gamenative.externaldisplay.IMEInputReceiver
 import app.gamenative.ui.screen.wow.MobileDiagnosticsDialog
 import app.gamenative.ui.screen.wow.usesTabletLayout
 import com.winlator.xserver.XKeycode
+import kotlinx.coroutines.delay
 import kotlin.math.roundToInt
 
 private val overlayBackground = Color(0xEB191610)
@@ -89,6 +93,7 @@ internal fun BoxScope.MobileGameOverlay(
     loginFailed: Boolean,
     browserConnectionStalled: Boolean,
     onRetryBrowserLogin: () -> Unit,
+    gameSurfaceBounds: () -> RectF?,
 ) {
     if (!visible || receiver == null) return
     DisposableEffect(controls, receiver, canPlayWithTouch) {
@@ -160,8 +165,24 @@ internal fun BoxScope.MobileGameOverlay(
     val topMargin = with(density) { 5.dp.toPx() }
     var viewport by remember { mutableStateOf(IntSize.Zero) }
     var toolbar by remember { mutableStateOf(IntSize.Zero) }
+    var overlayTop by remember(chatFullscreen) { mutableFloatStateOf(Float.NaN) }
+    var composerTop by remember(chatFullscreen) { mutableFloatStateOf(Float.NaN) }
+    var lastChatHeight by remember(chatFullscreen) { mutableIntStateOf(-1) }
+    LaunchedEffect(chatFullscreen, composerTop, overlayTop, viewport) {
+        if (!chatFullscreen || !composerTop.isFinite() || !overlayTop.isFinite() || viewport.height <= 0) return@LaunchedEffect
+        // Coalesce the IME animation's layout changes before resizing the game chat once.
+        delay(40)
+        val bounds = gameSurfaceBounds()
+        val gameHeight = bounds?.height()?.takeIf { it > 0f } ?: viewport.height.toFloat()
+        val gameTop = bounds?.top ?: 0f
+        val bottom = ((composerTop - overlayTop - gameTop) / gameHeight * 1000f).roundToInt().coerceIn(0, 1000)
+        if (bottom != lastChatHeight && controls.transferFullscreenChat("h" + bottom.toString().padStart(4, '0'), receiver::typeText)) {
+            lastChatHeight = bottom
+        }
+    }
 
-    Box(Modifier.matchParentSize().onSizeChanged { viewport = it }) {
+    val chatPosition = if (chatFullscreen) Modifier.onGloballyPositioned { overlayTop = it.positionInWindow().y } else Modifier
+    Box(Modifier.matchParentSize().onSizeChanged { viewport = it }.then(chatPosition)) {
         if (controls.savingArc) {
             Box(
                 Modifier.align(Alignment.Center).fillMaxWidth(.66f).fillMaxHeight(.48f)
@@ -169,6 +190,21 @@ internal fun BoxScope.MobileGameOverlay(
                 contentAlignment = Alignment.Center,
             ) {
                 Text(stringResource(R.string.mobile_arc_saving), color = overlayText)
+            }
+            return@Box
+        }
+        if (chatFullscreen) {
+            Box(
+                Modifier.align(Alignment.BottomCenter).fillMaxWidth(.95f)
+                    .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom))
+                    .padding(bottom = 6.dp),
+            ) {
+                MobileFullscreenChatInput(
+                    modifier = Modifier.onGloballyPositioned { composerTop = it.positionInWindow().y },
+                    onFocusChanged = controls::focusChatComposer,
+                    onSend = { packet -> controls.transferFullscreenChat(packet, receiver::typeText) },
+                    onClose = { controls.showChatFullscreen(false) },
+                )
             }
             return@Box
         }
@@ -338,11 +374,10 @@ internal fun BoxScope.MobileGameOverlay(
             val gameWidth = viewport.width.toFloat()
             val gameHeight = viewport.height.toFloat()
             // Match the managed dock in ForeverTouchChat.lua and stay inside safe areas.
-            val end = if (chatFullscreen) gameWidth * .05f
-                else minOf(gameWidth * .28f, gameHeight * .34f) + maxOf(gameWidth * .045f, gameHeight * .14f) +
-                    gameHeight * .01f
-            val center = gameHeight * (if (chatFullscreen) .073f else .191f)
-            val compact = !chatting && !chatFullscreen
+            val end = minOf(gameWidth * .28f, gameHeight * .34f) + maxOf(gameWidth * .045f, gameHeight * .14f) +
+                gameHeight * .01f
+            val center = gameHeight * .191f
+            val compact = !chatting
             val height = if (compact) 35.dp else 44.dp
             val halfHeight = with(density) { height.toPx() / 2 }
             val x = maxOf(end, right)
@@ -366,12 +401,8 @@ internal fun BoxScope.MobileGameOverlay(
                         ChatDockButton(android.R.string.cancel, Icons.Filled.Close) { finishChat(send = false) }
                     } else {
                         ChatDockButton(R.string.mobile_chat, Icons.Filled.Edit, compact, ::composeMessage)
-                        if (chatFullscreen) {
-                            ChatDockButton(R.string.mobile_chat_window, Icons.Filled.Close) { controls.showChatFullscreen(false) }
-                        } else {
-                            ChatDockButton(R.string.mobile_chat_fullscreen, Icons.Filled.Fullscreen, compact = true) {
-                                controls.showChatFullscreen(true)
-                            }
+                        ChatDockButton(R.string.mobile_chat_fullscreen, Icons.Filled.Fullscreen, compact = true) {
+                            controls.showChatFullscreen(true)
                         }
                     }
                 }

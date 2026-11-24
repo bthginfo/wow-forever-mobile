@@ -1545,7 +1545,9 @@ internal fun XServerScreen(
                 !keepPausedForEditor
         // logD("onKeyEvent(${it.event.device.sources})\n\tisGamepad: $isGamepad\n\tisKeyboard: $isKeyboard\n\t${it.event}")
 
-        if (waitingForManualResume) {
+        if (mobileControls.chatComposerFocused && isKeyboard && !isGamepad) {
+            false // The Android text field owns typing, editing shortcuts, and Enter.
+        } else if (waitingForManualResume) {
             when (it.event.keyCode) {
                 KeyEvent.KEYCODE_ENTER,
                 KeyEvent.KEYCODE_BUTTON_A,
@@ -2809,6 +2811,7 @@ internal fun XServerScreen(
             loginFailed = loginObservation?.state?.phase == R.string.mobile_diagnostics_error,
             browserConnectionStalled = loginObservation?.browserStalled == true,
             onRetryBrowserLogin = ::retryBrowserLogin,
+            gameSurfaceBounds = { (xServerView?.renderer as? VulkanRenderer)?.gameSurfaceBounds },
         )
 
         QuickMenu(

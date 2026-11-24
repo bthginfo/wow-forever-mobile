@@ -26,6 +26,7 @@ local docked, hooked = {}, {}
 local nativeChat
 local stockChat = false
 local input, sizing
+local composerBottom
 local controlHeight, contactWidth
 local refresh, layoutContacts
 local function isPrivateChat() return category == "WHISPER" or category == "FRIENDS" end
@@ -210,6 +211,7 @@ for _, tab in ipairs(tabs) do
 end
 
 local contacts = CreateFrame("Frame", nil, panel)
+if contacts.SetClipsChildren then contacts:SetClipsChildren(true) end
 contacts.fill = roundFill(contacts, "BACKGROUND", 10)
 contacts.fill:SetColorTexture(.069, .092, .145, .92)
 local sidebarTitle = label(contacts, "LEFT", "GameFontNormalSmall")
@@ -540,6 +542,14 @@ function Chat.layout()
     -- The launcher can place its IME and full-chat buttons alongside this dock.
     local right = managedKeyboard and math.min(width * .28, height * .34) or rightInset(width, height)
     local unit, gap = math.max(25, math.min(height * .062, width * .08)), math.max(6, height * .012)
+    local fullHeight = height * .93
+    if fullscreen and composerBottom and not stockChat then
+        fullHeight = math.min(fullHeight, math.max(1, height * (composerBottom - .035) - gap))
+        if fullHeight < height * .65 then
+            unit = math.min(unit, math.max(16, fullHeight * .19))
+            gap = math.max(3, fullHeight * .03)
+        end
+    end
     controlHeight = unit
     place(toggle, "TOPRIGHT", UIParent, "TOPRIGHT", -right, -height * .16,
         math.max(width * .045, height * .14), unit)
@@ -555,7 +565,7 @@ function Chat.layout()
         if fullscreen then
             panel:SetFrameStrata("FULLSCREEN_DIALOG")
             place(panel, "TOPLEFT", UIParent, "TOPLEFT", width * .025, -height * .035,
-                width * .95, height * .93)
+                width * .95, fullHeight)
         else
             panel:SetFrameStrata("HIGH")
             local w = math.min(maxW, math.max(minW, (widthRatio or .67) * height))
@@ -615,7 +625,7 @@ function Chat.layout()
     if sidebar then
         contactWidth = math.min(panel:GetWidth() * .37, math.max(unit * 4.6, 140))
         place(contacts, "TOPLEFT", panel, "TOPLEFT", gap, -offset, contactWidth,
-            math.max(unit * 2, panel:GetHeight() - offset - gap))
+            math.max(1, panel:GetHeight() - offset - gap))
         left = left + contactWidth + gap
         layoutContacts()
     end
@@ -757,7 +767,7 @@ function Chat.initialize(preferences, save)
     history.reset()
     friends, friendsByKey = {}, {}
     category, peer, contactPage, stockChat = "ALL", nil, 1, false
-    fullscreen, widthRatio, heightRatio = false, nil, nil
+    fullscreen, widthRatio, heightRatio, composerBottom = false, nil, nil, nil
     expanded, enabled, onChange = preferences.mobileChatOpen == true, true, save
     local size = preferences.mobileChatSize
     if type(size) == "table" then
@@ -793,7 +803,7 @@ function Chat.setFullscreen(active)
     if not enabled or input or fullscreen == active then return end
     finishResize()
     stockChat = false
-    fullscreen = active
+    fullscreen, composerBottom = active, nil
     if not active and category == "FRIENDS" then category, peer, contactPage = "ALL", nil, 1 end
     Chat.layout()
     refresh()
@@ -813,22 +823,22 @@ function Chat.onMessage(event, ...)
     if thread or history.restrictedUnread then updateUnread() end
 end
 
-function Chat.open()
+local function openChat(captureUnavailable)
     if not enabled then return end
     local getActive = ChatFrameUtil and ChatFrameUtil.GetActiveWindow or ChatEdit_GetActiveWindow
     local open = ChatFrameUtil and ChatFrameUtil.OpenChat or ChatFrame_OpenChat
     if not open then return end
     if stockChat then
         local dock = GENERAL_CHAT_DOCK
-        open("", dock and FCFDock_GetSelectedWindow and FCFDock_GetSelectedWindow(dock) or DEFAULT_CHAT_FRAME)
-        return
+        return open("", dock and FCFDock_GetSelectedWindow and FCFDock_GetSelectedWindow(dock) or DEFAULT_CHAT_FRAME)
+            or (getActive and getActive())
     end
     local kind, target = destination()
     if not kind then
         if UIErrorsFrame then
             UIErrorsFrame:AddMessage(text("Choose an available chat or conversation.", "Wähle einen verfügbaren Chat oder eine Unterhaltung."))
         end
-        if managedKeyboard then
+        if managedKeyboard and captureUnavailable then
             -- The platform keyboard can already be opening. Keep its keys out of gameplay.
             unavailable:SetSize(1, 1)
             unavailable:SetPoint("CENTER")
@@ -839,7 +849,7 @@ function Chat.open()
     end
 
     local entry = input and input.frame
-    if entry and entry:HasFocus() then return true end
+    if entry and entry:HasFocus() then return entry end
     parked:Show()
     entry = getActive and getActive()
     if not entry or not entry:HasFocus() then entry = open("", DEFAULT_CHAT_FRAME) or (getActive and getActive()) end
@@ -868,7 +878,71 @@ function Chat.open()
     end
     Chat.layout()
     refresh()
-    return true
+    return entry
+end
+
+function Chat.open()
+    return openChat(true)
+end
+
+if managedKeyboard then
+    -- This editor receives only the launcher's length-prefixed chat packets. The
+    -- actual draft and Android text selection remain in the visible composer.
+    local transport = CreateFrame("EditBox", "ForeverTouchChatTransport", UIParent)
+    local transfer = 0
+    transport:SetSize(1, 1)
+    transport:SetPoint("CENTER")
+    transport:SetAlpha(0)
+    transport:SetFontObject(GameFontHighlight)
+    transport:SetAutoFocus(false)
+    transport:EnableMouse(false)
+    transport:SetMaxBytes(514)
+    transport:Hide()
+    transport:SetScript("OnEditFocusLost", function(self) self:Hide() end)
+    transport:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+
+    function Chat.beginNativeTransfer()
+        transfer = transfer + 1
+        local request = transfer
+        transport:SetText("")
+        transport:Show()
+        transport:SetFocus()
+        C_Timer.After(1, function()
+            if request == transfer and transport:IsShown() then transport:ClearFocus() end
+        end)
+    end
+
+    transport:SetScript("OnTextChanged", function(self, fromKeyboard)
+        if not fromKeyboard then return end
+        local packet = self:GetText()
+        local layout = packet:match("^h(%d%d%d%d)$")
+        local count, hex = packet:match("^m(%d%d%d)(%x+)$")
+        count = tonumber(count)
+        if not layout and not (count and count >= 1 and count <= 255 and #hex == count * 2) then return end
+        self:SetText("")
+        self:ClearFocus()
+        if not enabled or not fullscreen then return end
+        if layout then
+            local bottom = math.min(1000, tonumber(layout)) / 1000
+            if bottom ~= composerBottom then
+                composerBottom = bottom
+                Chat.layout()
+            end
+            return
+        end
+
+        local body = hex:gsub("%x%x", function(byte) return string.char(tonumber(byte, 16)) end)
+        if body:find("[%z\1-\31\127]") or not body:find("%S") then return end
+        local entry = openChat(false)
+        if not entry or entry:IsForbidden() or not entry:HasFocus() then return end
+        local submit = entry:GetScript("OnEnterPressed")
+        if submit then
+            entry:SetText(body)
+            submit(entry)
+        else
+            entry:ClearFocus()
+        end
+    end)
 end
 
 local reader = CreateFrame("Frame")

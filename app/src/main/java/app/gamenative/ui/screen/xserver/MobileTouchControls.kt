@@ -28,6 +28,8 @@ internal class MobileTouchControls(private val touchSlop: Float) {
         private set
     var chatFullscreen by mutableStateOf(false)
         private set
+    var chatComposerFocused = false
+        private set
     var hudEditor by mutableStateOf<MobileHudEditor?>(null)
         private set
     var savingArc by mutableStateOf(false)
@@ -106,7 +108,19 @@ internal class MobileTouchControls(private val touchSlop: Float) {
         releaseAll()
         touchpad?.cancelTouchInput()
         chatFullscreen = active
+        if (!active) chatComposerFocused = false
         tap(if (active) XKeycode.KEY_M else XKeycode.KEY_C, modified = true)
+    }
+
+    fun focusChatComposer(focused: Boolean) {
+        chatComposerFocused = chatFullscreen && focused
+    }
+
+    fun transferFullscreenChat(packet: String, type: (String) -> Unit): Boolean {
+        if (!playing || !chatFullscreen || chatting || server == null) return false
+        tap(XKeycode.KEY_U, modified = true)
+        type(packet)
+        return true
     }
 
     fun openHudEditor(editor: MobileHudEditor) {
@@ -178,6 +192,7 @@ internal class MobileTouchControls(private val touchSlop: Float) {
         savingArc = false
         chatting = false
         chatFullscreen = false
+        chatComposerFocused = false
     }
 
     fun tap(key: XKeycode, modified: Boolean = false) {

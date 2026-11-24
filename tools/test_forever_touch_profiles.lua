@@ -33,6 +33,7 @@ local methods = {
         self.scripts[name] = callback
         if name == "OnEvent" then event = callback end
     end,
+    GetScript = function(self, name) return self.scripts[name] end,
     HookScript = function(self, name, callback) self.scripts[name] = callback end,
     SetAttribute = function(self, name, value)
         guarded(self)
@@ -61,6 +62,7 @@ local methods = {
     end,
     AddMessage = function(self, value) self.lines[#self.lines + 1] = value end,
     SetText = function(self, value) self.text = value end,
+    GetText = function(self) return self.text end,
     SetSwipeColor = function(self, _, _, _, alpha) self.swipeAlpha = alpha end,
     SetVertexColor = function(self, red) self.red = red end,
     SetColorTexture = function(self, r, g, b) self.rasterColor = math.floor(r * 8 + g * 6 + b + .5) end,
@@ -230,18 +232,21 @@ local function login(guid, characterSaved, accountSaved, options)
             return picker
         end,
     }
+    local addons = C_AddOns
+    if options.nativeKeyboard or options.arcSession then
+        C_AddOns = { GetAddOnMetadata = function(_, key)
+            if key == "X-ForeverTouch-Keyboard" and options.nativeKeyboard then return "native" end
+            if key == "X-ForeverTouch-ArcSession" then return options.arcSession end
+        end }
+    end
     assert(loadfile(source .. "/ForeverTouchActions.lua"))("ForeverTouch", addon)
     if options.realPicker then assert(loadfile(source .. "/ForeverTouchPicker.lua"))("ForeverTouch", addon) end
     assert(loadfile(source .. "/ForeverTouchChatHistory.lua"))("ForeverTouch", addon)
     assert(loadfile(source .. "/ForeverTouchChat.lua"))("ForeverTouch", addon)
     if options.arcSession then
-        local addons = C_AddOns
-        C_AddOns = { GetAddOnMetadata = function(_, key)
-            if key == "X-ForeverTouch-ArcSession" then return options.arcSession end
-        end }
         assert(loadfile(source .. "/ForeverTouchArcSave.lua"))("ForeverTouch", addon)
-        C_AddOns = addons
     end
+    C_AddOns = addons
     assert(loadfile(source .. "/ForeverTouchMobileLayout.lua"))("ForeverTouch", addon)
     -- The client loads SavedVariables after running the add-on's Lua chunks.
     ForeverTouchPreferences, ForeverTouchProfiles = copy(characterSaved), copy(accountSaved)
@@ -1186,4 +1191,76 @@ assert(reloads == 0 and not disk and not transferFrame:IsShown())
 assert(frames.ForeverTouchRightAction1.attributes.item == "item:508", "the receipt applies the arc without reloading")
 C_Timer.After = after
 
-print("Passed: Android arc save without reload, arc upgrade recovery, saved switches, spell ranks, cooldowns and charges, item counts, event batching, picker paging, professions, chat resizing, channel filters, friends, whispers and frame limiting.")
+-- The Android composer keeps its draft in Android and sends one message to the
+-- selected WoW chat. IME layout changes never open or submit the stock editor.
+local fullscreenChat = login(first, nil, nil, {nativeKeyboard = true})
+click("FullscreenChat")
+local bridge = frames.ForeverTouchChatTransport
+local mobilePanel = frames.ForeverTouchChatPanel
+local mobileTranscript = frames.ForeverTouchChatTranscript
+local sendingBox = CreateFrame("EditBox", "ChatFrame1EditBox", DEFAULT_CHAT_FRAME)
+sendingBox:SetSize(390, 28)
+sendingBox:SetPoint("TOP", DEFAULT_CHAT_FRAME, "BOTTOM", 0, -3)
+local delivered, opened = {}, 0
+sendingBox:SetScript("OnEnterPressed", function(self)
+    assert(hardwareEvent, "the message is dispatched during the keyboard event")
+    delivered[#delivered + 1] = { text = self:GetText(), kind = self.chatType, target = self.tellTarget }
+    self:ClearFocus()
+end)
+ChatFrame_OpenChat = function()
+    opened = opened + 1
+    sendingBox:SetFocus()
+    return sendingBox
+end
+ChatEdit_GetActiveWindow = function() return sendingBox:HasFocus() and sendingBox or nil end
+C_Timer.After = function(seconds, callback) if seconds == 0 then after(seconds, callback) end end
+local function inputPacket(packet)
+    click("NativeChatTransfer")
+    assert(bridge:IsShown() and bridge:HasFocus())
+    hardwareEvent = true
+    for i = 1, #packet do
+        bridge:SetText(packet:sub(1, i))
+        bridge.scripts.OnTextChanged(bridge, true)
+    end
+    hardwareEvent = false
+end
+local function messagePacket(message)
+    return ("m%03d"):format(#message) .. message:gsub(".", function(byte) return ("%02x"):format(byte:byte()) end)
+end
+
+fullscreenChat.chat.onMessage("CHAT_MSG_SAY", "A visible chat message", "Lina")
+inputPacket("h0410")
+assert(mobilePanel:GetHeight() < 720 * .41 and #mobileTranscript.lines == 1 and opened == 0,
+    "the chat panel reflows above the keyboard and preserves the transcript")
+inputPacket("h0890")
+assert(mobilePanel:GetHeight() > 720 * .7 and #mobileTranscript.lines == 1 and opened == 0)
+
+local greeting = " Grüße! 😀 "
+inputPacket(messagePacket(greeting))
+assert(#delivered == 1 and delivered[1].text == greeting and delivered[1].kind == "SAY")
+assert(not bridge:IsShown() and mobilePanel:IsShown() and reloads == 0)
+
+fullscreenChat.chat.onMessage("CHAT_MSG_WHISPER", "An invitation", "Aria-Sun")
+click("ChatTabWHISPER")
+inputPacket(messagePacket("No recipient yet"))
+assert(#delivered == 1 and not bridge:IsShown(), "a private message needs a selected contact")
+click("ChatContact1")
+inputPacket(messagePacket("Danke!"))
+assert(#delivered == 2 and delivered[2].kind == "WHISPER" and delivered[2].target == "Aria-Sun")
+
+click("ChatTabGUILD")
+inputPacket(messagePacket("No guild"))
+assert(#delivered == 2, "unavailable channels never send to Say instead")
+IsInGuild = function() return true end
+inputPacket("m00663686174")
+assert(#delivered == 2, "a truncated packet never sends a message")
+inputPacket(messagePacket("Gildenchat"))
+assert(#delivered == 3 and delivered[3].kind == "GUILD")
+click("CompactChat")
+inputPacket(messagePacket("Wrong screen"))
+assert(#delivered == 3, "closing full chat disables native compose")
+IsInGuild = function() return false end
+ChatFrame_OpenChat, ChatEdit_GetActiveWindow = nil, nil
+C_Timer.After = after
+
+print("Passed: Android arc save and recovery, spell ranks and cooldowns, picker paging, professions, full chat keyboard layout and message routing, standard chat, friends, and frame limiting.")
