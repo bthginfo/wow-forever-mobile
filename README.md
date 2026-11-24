@@ -1,15 +1,15 @@
 # WoW Forever Mobile
 
-## Android downloads · .26
+## Android downloads · .27
 
 | APK | Devices |
 | --- | --- |
-| [Standard Android .26](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.26/WoW-Forever-Mobile-2.4.4-mobile.26-Standard.apk) | Snapdragon 8 series with Adreno 7xx or 8xx |
-| [Pixel .26](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.26/WoW-Forever-Mobile-2.4.4-mobile.26-Pixel.apk) | Pixel 9 and 10 families and the original Pixel Fold (2023) |
+| [Standard Android .27](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.27/WoW-Forever-Mobile-2.4.4-mobile.27-Standard.apk) | Snapdragon 8 series with Adreno 7xx or 8xx |
+| [Pixel .27](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.27/WoW-Forever-Mobile-2.4.4-mobile.27-Pixel.apk) | Pixel 9 and 10 families and the original Pixel Fold (2023) |
 
-**Android 10+ · ARM64** · [.26 release](https://github.com/bthginfo/wow-forever-mobile/releases/tag/v2.4.4-mobile.26)
+**Android 10+ · ARM64** · [.27 release](https://github.com/bthginfo/wow-forever-mobile/releases/tag/v2.4.4-mobile.27)
 
-**Coming from .24?** The new signing certificate requires a one-time reinstall. Follow the steps below to reuse your existing WoW folder.
+**Coming from .26?** Version .27 uses a new signing key and requires a one-time reinstall. Follow the [update steps](#update-an-existing-installation) to reuse your WoW folder.
 
 An Android launcher and touch interface for Blizzard’s Windows ARM64 WoW Forever client. The launcher runs the client on the phone using Wine/Proton. It includes a browser-based Battle.net login, Android keyboard and clipboard controls, and a configurable in-game touch HUD.
 
@@ -56,9 +56,7 @@ The launcher downloads the matching `_forever_/Wow-ARM64.exe` from Blizzard when
 
 ### Update an existing installation
 
-If you already have .25, install the matching .26 APK as an update.
-
-When moving from .24 or an earlier Preview with the same app ID, back up `_forever_/WTF` in your WoW folder and keep the game folder. Uninstall the old launcher and install the matching .26 APK. Open **Find existing game files** and select that folder. You will set your launcher preferences again.
+Version .27 uses a new signing key. If the previous launcher has the same app ID, back up `_forever_/WTF` in your WoW folder and keep the game folder before uninstalling the old launcher. Install the matching .27 APK, open **Find existing game files**, and select your WoW folder. Set up your launcher preferences again.
 
 ### Pixel graphics profiles
 
@@ -84,7 +82,7 @@ The Pixel build checks Direct3D 11 before opening Battle.net sign-in. If the gra
 | Right camera area | Drag to turn the camera |
 | Jump | Right-side shortcut |
 | Target, Interact | Right-side shortcuts on phones and left-side shortcuts in the tablet layout |
-| Chat / Write | Opens chat with the Android keyboard. The chat toolbar includes Paste and Send. |
+| Chat / Full chat | Shows the resizable chat beside the minimap or opens the full conversation view |
 | Bags, Map, Character | Opens the corresponding WoW panel |
 | Talents, Quests, Spellbook | Opens the corresponding WoW panel |
 | Toolbar arrow | Minimizes the toolbar to one button. Tap it to show the shortcuts again. |
@@ -110,7 +108,11 @@ Arc edits apply as soon as you make them. Tap **Done** or use Android Back to cl
 
 To bind a learned entry such as Smelting or Fishing, open **More controls → Edit skills**, tap **+** and choose **Professions** in the slot picker.
 
-In .24, the **Chat** button sits directly to the left of the minimap. Tap it to show or hide the chat. A red dot on the collapsed button signals an incoming whisper. Open the chat to clear it. Use **Write** in the toolbar to bring up the keyboard.
+### Mobile chat
+
+Tap **Chat** beside the minimap to show or hide the translucent window. Drag the lower-left corner to resize it, or tap that corner to step through three sizes. WoW saves the size per character.
+
+Tap the message field to open the Android keyboard. **Full chat** shows separate whisper conversations and filters for party, raid, and guild. The red dot signals an unread whisper. The chat history covers your current game session.
 
 ### Tablets and fullscreen
 
@@ -133,7 +135,7 @@ Fullscreen is on by default. Open **More controls** in the game toolbar to enter
 
 ## Build from source
 
-The [source for both .26 APKs](https://github.com/bthginfo/wow-forever-mobile/tree/v2.4.4-mobile.26) has its own build instructions and Forever Touch tests.
+The [source for both .27 APKs](https://github.com/bthginfo/wow-forever-mobile/tree/v2.4.4-mobile.27) has the build flags for each APK, the Pixel runtime setup, and Forever Touch tests.
 
 Use JDK 17, Android SDK Platform 36, build-tools 35.0.0, and NDK 27.3.13750724. Point `local.properties` at your Android SDK. For a fresh checkout, build the ARM64 Wine login helper into `app/src/main/assets/wow-session-bridge.exe`. [Helper build and test instructions](tools/wow-session-bridge/README.md)
 
