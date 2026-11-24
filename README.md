@@ -1,15 +1,15 @@
 # WoW Forever Mobile
 
-## Android downloads · .28
+## Android downloads · .31
 
 | APK | Devices |
 | --- | --- |
-| [Standard Android .28](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.28/WoW-Forever-Mobile-2.4.4-mobile.28-Standard.apk) | Snapdragon 8 series with Adreno 7xx or 8xx, including the Galaxy S24 Ultra |
-| [Pixel .28](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.28/WoW-Forever-Mobile-2.4.4-mobile.28-Pixel.apk) | Pixel 9 and 10 families and the original Pixel Fold (2023) |
+| [Standard Android .31](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.31/WoW-Forever-Mobile-2.4.4-mobile.31-Standard.apk) | Snapdragon 8 series with Adreno 7xx or 8xx, including the Galaxy S24 Ultra |
+| [Pixel .31](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.31/WoW-Forever-Mobile-2.4.4-mobile.31-Pixel.apk) | Pixel 9 and 10 families and the original Pixel Fold (2023) |
 
-**Android 10+ · ARM64** · [.28 release](https://github.com/bthginfo/wow-forever-mobile/releases/tag/v2.4.4-mobile.28)
+**Android 10+ · ARM64** · [.31 release](https://github.com/bthginfo/wow-forever-mobile/releases/tag/v2.4.4-mobile.31)
 
-**Updating from .27?** Install the matching .28 APK over it. If you are coming from .26 with the same app ID, follow the [update steps](#update-an-existing-installation) to reuse your WoW folder.
+**Updating from .27–.30?** Install the matching .31 APK over your existing launcher. If you're coming from .26 with the same app ID, follow the update steps to reuse your WoW folder. [Update instructions](#update-an-existing-installation)
 
 An Android launcher and touch interface for Blizzard’s Windows ARM64 WoW Forever client. The launcher runs the client on the phone using Wine/Proton. It includes a browser-based Battle.net login, Android keyboard and clipboard controls, and a configurable in-game touch HUD.
 
@@ -96,7 +96,7 @@ The Pixel build checks Direct3D 11 before opening Battle.net sign-in. If the gra
 | More controls → Text input | Opens the Android keyboard and paste controls for the game |
 | Set button | Cycles through your skill arc sets once you have created a second set |
 
-The touch overlay translates Android gestures into keyboard and mouse input for the game window. Forever Touch reads populated action slots and keeps a per-character mobile layout in its own add-on saved variables. Use **Edit skills** to set up the mobile spell and item buttons.
+The touch overlay translates Android gestures into keyboard and mouse input for the game window. Forever Touch reads populated action slots and keeps a separate touch layout for each character. Use **Edit skills** to set up the mobile spell and item buttons.
 
 ### Skill arc sets
 
@@ -106,17 +106,17 @@ Starting with .18, spell and item icons show a circular cooldown sweep and the r
 
 Forever Touch checks the spellbook when you log in and when you learn spells. It upgrades existing arc slots in all sets to the highest learned rank of that spell. An upgrade during combat takes effect after combat.
 
-Arc edits apply as soon as you make them. Tap **Done** or use Android Back to close the editor. WoW writes the changes together with one short interface reload and displays **Arc layout saved** after loading them again. During combat, the reload waits until combat ends. A normal WoW logout also writes completed edits from an open editor. **Discard** restores the layout you started editing.
+Tap **Done** or use Android Back to save your arc edits. The launcher writes the layout locally before closing the editor and displays **Arc layout saved**. You can close the app as soon as that confirmation appears. If you finish editing during combat, the buttons update when combat ends. **Discard** restores the layout you started editing.
+
+The launcher stores character layouts under `_forever_/WTF/.forever-touch` and restores the saved arcs on the next launch. It can also recover layouts written by earlier versions.
 
 To bind a learned entry such as Smelting or Fishing, open **More controls → Edit skills**, tap **+** and choose **Professions** in the slot picker.
 
 ### Mobile chat
 
-Tap **Chat** beside the minimap to show or hide the transparent window. Drag the lower-left corner to resize it, or tap that corner to step through three sizes. WoW saves the size per character.
+Tap **Chat** beside the minimap to show or hide the transparent window. Drag the lower-left handle or tap it to cycle through three sizes. WoW saves the size per character.
 
-Tap the small pencil beside the chat to open the Android keyboard. The expand button opens **Full chat** with a **Friends** tab, separate whisper conversations, and filters for party, raid, and guild. The red dot signals an unread whisper. The chat history covers your current game session.
-
-At launch, the app keeps a copy of saved Forever Touch profiles in `_forever_/WTF/.forever-touch`. It recovers a missing or empty profile when a saved copy is available.
+The small pencil opens the keyboard. The expand button beside it opens full chat with group, raid and guild filters, separate whisper conversations, and a **Friends** tab. **All** displays the lines from WoW's default chat, including channel notices, loot, money, and other system messages. A red dot signals an unread whisper. Chat history covers the current session.
 
 ### Tablets and fullscreen
 
@@ -139,7 +139,7 @@ Fullscreen is on by default. Open **More controls** in the game toolbar to enter
 
 ## Build from source
 
-The [source for both .28 APKs](https://github.com/bthginfo/wow-forever-mobile/tree/v2.4.4-mobile.28) has the build flags for each APK, the Pixel runtime setup, and Forever Touch tests.
+The release tag contains the source for both .31 APKs. [Source for .31](https://github.com/bthginfo/wow-forever-mobile/tree/v2.4.4-mobile.31)
 
 Use JDK 17, Android SDK Platform 36, build-tools 35.0.0, and NDK 27.3.13750724. Point `local.properties` at your Android SDK. For a fresh checkout, build the ARM64 Wine login helper into `app/src/main/assets/wow-session-bridge.exe`. [Helper build and test instructions](tools/wow-session-bridge/README.md)
 
