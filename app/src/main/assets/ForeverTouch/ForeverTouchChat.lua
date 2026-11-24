@@ -916,13 +916,14 @@ if managedKeyboard then
         if not fromKeyboard then return end
         local packet = self:GetText()
         local layout = packet:match("^h(%d%d%d%d)$")
-        local count, hex = packet:match("^m(%d%d%d)(%x+)$")
+        local mode, count, hex = packet:match("^([mc])(%d%d%d)(%x+)$")
         count = tonumber(count)
         if not layout and not (count and count >= 1 and count <= 255 and #hex == count * 2) then return end
         self:SetText("")
         self:ClearFocus()
-        if not enabled or not fullscreen then return end
+        if not enabled then return end
         if layout then
+            if not fullscreen then return end
             local bottom = math.min(1000, tonumber(layout)) / 1000
             if bottom ~= composerBottom then
                 composerBottom = bottom
@@ -930,6 +931,8 @@ if managedKeyboard then
             end
             return
         end
+
+        if mode ~= (fullscreen and "m" or "c") then return end
 
         local body = hex:gsub("%x%x", function(byte) return string.char(tonumber(byte, 16)) end)
         if body:find("[%z\1-\31\127]") or not body:find("%S") then return end

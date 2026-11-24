@@ -1,7 +1,7 @@
 ## Interface: 16001
 ## Title: Forever Touch
 ## Notes: Switchable touch arcs with cooldowns for spells and items
-## Version: 2.21
+## Version: 2.22
 ## SavedVariables: ForeverTouchProfiles, ForeverTouchFrameLimit
 ## SavedVariablesPerCharacter: ForeverTouchPreferences
 ForeverTouchRecovery.lua

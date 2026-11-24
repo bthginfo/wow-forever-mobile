@@ -19,10 +19,10 @@ import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.Keyboard
+import androidx.compose.material.icons.filled.KeyboardHide
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.SportsEsports
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
@@ -66,6 +66,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.gamenative.R
 import app.gamenative.externaldisplay.IMEInputReceiver
+import app.gamenative.ui.component.InlineKey
+import app.gamenative.ui.component.InlineKeyboard
 import app.gamenative.ui.screen.wow.MobileDiagnosticsDialog
 import app.gamenative.ui.screen.wow.usesTabletLayout
 import com.winlator.xserver.XKeycode
@@ -98,10 +100,7 @@ internal fun BoxScope.MobileGameOverlay(
     if (!visible || receiver == null) return
     DisposableEffect(controls, receiver, canPlayWithTouch) {
         onDispose {
-            if (controls.chatting) {
-                controls.closeChat()
-                receiver.hideKeyboard()
-            }
+            controls.closeChat()
             controls.showChatFullscreen(false)
             controls.closeHudEditor()
             controls.releaseAll()
@@ -142,15 +141,9 @@ internal fun BoxScope.MobileGameOverlay(
 
     BackHandler(enabled = editor != null) { finishEditor(save = !editingControls) }
 
-    fun finishChat(send: Boolean) {
-        controls.closeChat(send)
-        receiver.hideKeyboard()
-    }
-
     fun composeMessage() {
         controls.setChatActive(true)
-        controls.tap(XKeycode.KEY_F8, modified = true)
-        receiver.showKeyboard { finishChat(send = true) }
+        controls.showChatKeyboard(true)
     }
 
     val density = LocalDensity.current
@@ -170,13 +163,13 @@ internal fun BoxScope.MobileGameOverlay(
     var lastChatHeight by remember(chatFullscreen) { mutableIntStateOf(-1) }
     LaunchedEffect(chatFullscreen, composerTop, overlayTop, viewport) {
         if (!chatFullscreen || !composerTop.isFinite() || !overlayTop.isFinite() || viewport.height <= 0) return@LaunchedEffect
-        // Coalesce the IME animation's layout changes before resizing the game chat once.
+        // Coalesce composer changes before resizing the game's chat history.
         delay(40)
         val bounds = gameSurfaceBounds()
         val gameHeight = bounds?.height()?.takeIf { it > 0f } ?: viewport.height.toFloat()
         val gameTop = bounds?.top ?: 0f
         val bottom = ((composerTop - overlayTop - gameTop) / gameHeight * 1000f).roundToInt().coerceIn(0, 1000)
-        if (bottom != lastChatHeight && controls.transferFullscreenChat("h" + bottom.toString().padStart(4, '0'), receiver::typeText)) {
+        if (bottom != lastChatHeight && controls.transferChat("h" + bottom.toString().padStart(4, '0'), receiver::typeText)) {
             lastChatHeight = bottom
         }
     }
@@ -193,7 +186,7 @@ internal fun BoxScope.MobileGameOverlay(
             }
             return@Box
         }
-        if (chatFullscreen) {
+        if (chatFullscreen || chatting) {
             Box(
                 Modifier.align(Alignment.BottomCenter).fillMaxWidth(.95f)
                     .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal + WindowInsetsSides.Bottom))
@@ -201,10 +194,42 @@ internal fun BoxScope.MobileGameOverlay(
             ) {
                 MobileFullscreenChatInput(
                     modifier = Modifier.onGloballyPositioned { composerTop = it.positionInWindow().y },
+                    keyboardVisible = controls.chatKeyboardVisible,
+                    onKeyboardVisibility = controls::showChatKeyboard,
+                    clipboardText = receiver::clipboardText,
                     onFocusChanged = controls::focusChatComposer,
-                    onSend = { packet -> controls.transferFullscreenChat(packet, receiver::typeText) },
-                    onClose = { controls.showChatFullscreen(false) },
+                    onSend = { packet -> controls.transferChat(packet, receiver::typeText) },
+                    onClose = { if (chatFullscreen) controls.showChatFullscreen(false) else controls.closeChat() },
                 )
+            }
+            return@Box
+        }
+        if (controls.guestKeyboardVisible) {
+            Surface(
+                modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(.95f).safeDrawingPadding(),
+                shape = RoundedCornerShape(14.dp),
+                color = Color(0xFF151E2B),
+            ) {
+                Column {
+                    IconButton(onClick = { controls.showGuestKeyboard(false) }, modifier = Modifier.align(Alignment.End)) {
+                        Icon(Icons.Filled.KeyboardHide, stringResource(R.string.mobile_keyboard_hide))
+                    }
+                    InlineKeyboard(
+                        onText = receiver::typeText,
+                        allowGerman = false,
+                        showTab = true,
+                        onKey = { key ->
+                            when (key) {
+                                InlineKey.BACKSPACE -> controls.tap(XKeycode.KEY_BKSP)
+                                InlineKey.ENTER -> controls.tap(XKeycode.KEY_ENTER)
+                                InlineKey.PASTE -> receiver.pasteFromClipboard()
+                                InlineKey.LEFT -> controls.tap(XKeycode.KEY_LEFT)
+                                InlineKey.RIGHT -> controls.tap(XKeycode.KEY_RIGHT)
+                                InlineKey.TAB -> controls.tap(XKeycode.KEY_TAB)
+                            }
+                        },
+                    )
+                }
             }
             return@Box
         }
@@ -286,7 +311,7 @@ internal fun BoxScope.MobileGameOverlay(
                             ToolbarText(R.string.mobile_spellbook, enabled = !editingControls) { controls.tap(XKeycode.KEY_F6, modified = true) }
                         }
                     } else {
-                        ToolbarText(R.string.keyboard, Icons.Filled.Keyboard, onClick = receiver::showKeyboard)
+                        ToolbarText(R.string.keyboard, Icons.Filled.Keyboard) { controls.showGuestKeyboard(true) }
                         ToolbarText(R.string.mobile_paste, Icons.Filled.ContentPaste) { receiver.pasteFromClipboard() }
                     }
 
@@ -377,8 +402,7 @@ internal fun BoxScope.MobileGameOverlay(
             val end = minOf(gameWidth * .28f, gameHeight * .34f) + maxOf(gameWidth * .045f, gameHeight * .14f) +
                 gameHeight * .01f
             val center = gameHeight * .191f
-            val compact = !chatting
-            val height = if (compact) 35.dp else 44.dp
+            val height = 35.dp
             val halfHeight = with(density) { height.toPx() / 2 }
             val x = maxOf(end, right)
             val y = maxOf(center - halfHeight, top)
@@ -386,24 +410,14 @@ internal fun BoxScope.MobileGameOverlay(
                 modifier = Modifier.align(Alignment.TopEnd)
                     .absoluteOffset { IntOffset(-x.roundToInt(), y.roundToInt()) }
                     .widthIn(max = with(density) { (gameWidth - x - left).coerceAtLeast(0f).toDp() }),
-                color = if (compact) Color(0x72151E2B) else Color(0xBE151E2B),
+                color = Color(0x72151E2B),
                 contentColor = Color(0xFFF0F5FF),
                 shape = RoundedCornerShape(22.dp),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (chatting) {
-                        ChatDockButton(R.string.keyboard, Icons.Filled.Keyboard) {
-                            controls.tap(XKeycode.KEY_F8, modified = true)
-                            receiver.showKeyboard { finishChat(send = true) }
-                        }
-                        ChatDockButton(R.string.mobile_paste, Icons.Filled.ContentPaste) { receiver.pasteFromClipboard(chat = true) }
-                        ChatDockButton(R.string.mobile_chat_send, Icons.Filled.Send) { finishChat(send = true) }
-                        ChatDockButton(android.R.string.cancel, Icons.Filled.Close) { finishChat(send = false) }
-                    } else {
-                        ChatDockButton(R.string.mobile_chat, Icons.Filled.Edit, compact, ::composeMessage)
-                        ChatDockButton(R.string.mobile_chat_fullscreen, Icons.Filled.Fullscreen, compact = true) {
-                            controls.showChatFullscreen(true)
-                        }
+                    ChatDockButton(R.string.mobile_chat, Icons.Filled.Edit, compact = true, onClick = ::composeMessage)
+                    ChatDockButton(R.string.mobile_chat_fullscreen, Icons.Filled.Fullscreen, compact = true) {
+                        controls.showChatFullscreen(true)
                     }
                 }
             }

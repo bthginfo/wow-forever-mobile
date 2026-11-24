@@ -1,6 +1,8 @@
 package app.gamenative.ui.screen.xserver
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -11,10 +13,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Keyboard
+import androidx.compose.material.icons.filled.KeyboardHide
 import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -22,14 +24,19 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -38,12 +45,17 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.platform.InterceptPlatformTextInput
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.PlatformTextInputInterceptor
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.input.ImeAction
-import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import app.gamenative.R
+import app.gamenative.ui.component.InlineKey
+import app.gamenative.ui.component.InlineKeyboard
+import kotlinx.coroutines.awaitCancellation
 
 private const val CHAT_MESSAGE_BYTES = 255
 private val chatInk = Color(0xFFF0F5FF)
@@ -69,30 +81,65 @@ internal fun fullscreenChatMessagePacket(draft: String): String? {
     }
 }
 
+internal fun insertChatText(value: TextFieldValue, insert: String): TextFieldValue {
+    val start = value.selection.min
+    val end = value.selection.max
+    val text = insert.map { if (it.isISOControl()) ' ' else it }.joinToString("")
+    return TextFieldValue(value.text.replaceRange(start, end, text), TextRange(start + text.length))
+}
+
+internal fun editChatText(value: TextFieldValue, key: InlineKey): TextFieldValue {
+    val start = value.selection.min
+    val end = value.selection.max
+    val hasSelection = start != end
+    return when (key) {
+        InlineKey.BACKSPACE -> {
+            val from = if (hasSelection || start == 0) start else value.text.offsetByCodePoints(start, -1)
+            TextFieldValue(value.text.removeRange(from, end), TextRange(from))
+        }
+        InlineKey.LEFT -> {
+            val cursor = if (hasSelection || start == 0) start else value.text.offsetByCodePoints(start, -1)
+            value.copy(selection = TextRange(cursor))
+        }
+        InlineKey.RIGHT -> {
+            val cursor = if (hasSelection || end == value.text.length) end else value.text.offsetByCodePoints(end, 1)
+            value.copy(selection = TextRange(cursor))
+        }
+        else -> value
+    }
+}
+
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 internal fun MobileFullscreenChatInput(
     modifier: Modifier = Modifier,
+    keyboardVisible: Boolean,
+    onKeyboardVisibility: (Boolean) -> Unit,
+    clipboardText: () -> CharSequence?,
     onFocusChanged: (Boolean) -> Unit,
     onSend: (String) -> Boolean,
     onClose: () -> Unit,
 ) {
-    var draft by remember { mutableStateOf("") }
+    var draft by remember { mutableStateOf(TextFieldValue()) }
     var focused by remember { mutableStateOf(false) }
-    val packet = remember(draft) { fullscreenChatMessagePacket(draft) }
-    val tooLong = packet == null && draft.isNotBlank()
-    val keyboard = LocalSoftwareKeyboardController.current
+    val packet = remember(draft.text) { fullscreenChatMessagePacket(draft.text) }
+    val tooLong = packet == null && draft.text.isNotBlank()
+    val focusRequester = remember { FocusRequester() }
+    val fieldTouches = remember { MutableInteractionSource() }
+    val blockIme = remember { PlatformTextInputInterceptor { _, _ -> awaitCancellation() } }
     val updateFocus by rememberUpdatedState(onFocusChanged)
-    DisposableEffect(keyboard) {
-        onDispose {
-            updateFocus(false)
-            if (focused) keyboard?.hide()
+    val setKeyboardVisibility by rememberUpdatedState(onKeyboardVisibility)
+    LaunchedEffect(fieldTouches) {
+        fieldTouches.interactions.collect { interaction ->
+            if (interaction is PressInteraction.Release) setKeyboardVisibility(true)
         }
     }
+    LaunchedEffect(keyboardVisible) { if (keyboardVisible) focusRequester.requestFocus() }
+    DisposableEffect(Unit) { onDispose { updateFocus(false) } }
 
     fun submit() {
-        // Read the current state so an IME action and a button tap cannot submit the same draft twice.
-        val pending = fullscreenChatMessagePacket(draft) ?: return
-        if (onSend(pending)) draft = ""
+        val pending = fullscreenChatMessagePacket(draft.text) ?: return
+        if (onSend(pending)) draft = TextFieldValue()
     }
 
     Surface(
@@ -111,45 +158,50 @@ internal fun MobileFullscreenChatInput(
                 IconButton(onClick = onClose, modifier = Modifier.size(48.dp)) {
                     Icon(Icons.Filled.Close, stringResource(R.string.mobile_chat_window), tint = chatHint)
                 }
-                BasicTextField(
-                    value = draft,
-                    onValueChange = { draft = it },
-                    singleLine = true,
-                    textStyle = MaterialTheme.typography.bodyLarge.copy(color = chatInk),
-                    cursorBrush = SolidColor(chatAccent),
-                    keyboardOptions = KeyboardOptions(
-                        capitalization = KeyboardCapitalization.Sentences,
-                        imeAction = ImeAction.Send,
-                    ),
-                    keyboardActions = KeyboardActions(onSend = { submit() }),
-                    modifier = Modifier.weight(1f).heightIn(min = 48.dp)
-                        .onFocusChanged { state ->
-                            focused = state.isFocused
-                            onFocusChanged(focused)
-                        }
-                        .onPreviewKeyEvent { event ->
-                            if (event.key != Key.Enter && event.key != Key.NumPadEnter) false else {
-                                if (event.type == KeyEventType.KeyUp) submit()
-                                true
-                            }
-                        },
-                    decorationBox = { input ->
-                        Box(contentAlignment = Alignment.CenterStart) {
-                            if (draft.isEmpty()) Text(stringResource(R.string.mobile_chat), color = chatHint)
-                            input()
-                        }
-                    },
-                )
+                CompositionLocalProvider(LocalSoftwareKeyboardController provides null) {
+                    InterceptPlatformTextInput(blockIme) {
+                        BasicTextField(
+                            value = draft,
+                            onValueChange = { draft = it },
+                            singleLine = true,
+                            textStyle = MaterialTheme.typography.bodyLarge.copy(color = chatInk),
+                            cursorBrush = SolidColor(chatAccent),
+                            interactionSource = fieldTouches,
+                            modifier = Modifier.weight(1f).heightIn(min = 48.dp)
+                                .focusRequester(focusRequester)
+                                .onFocusChanged { state ->
+                                    focused = state.isFocused
+                                    onFocusChanged(focused)
+                                }
+                                .onPreviewKeyEvent { event ->
+                                    if (event.key != Key.Enter && event.key != Key.NumPadEnter) false else {
+                                        if (event.type == KeyEventType.KeyUp) submit()
+                                        true
+                                    }
+                                },
+                            decorationBox = { input ->
+                                Box(contentAlignment = Alignment.CenterStart) {
+                                    if (draft.text.isEmpty()) Text(stringResource(R.string.mobile_chat), color = chatHint)
+                                    input()
+                                }
+                            },
+                        )
+                    }
+                }
                 IconButton(
-                    onClick = ::submit,
-                    enabled = packet != null,
+                    onClick = { onKeyboardVisibility(!keyboardVisible) },
                     modifier = Modifier.size(48.dp),
                 ) {
                     Icon(
-                        Icons.Filled.Send,
-                        contentDescription = stringResource(R.string.mobile_chat_send),
-                        tint = if (packet != null) chatAccent else chatHint.copy(alpha = .42f),
+                        if (keyboardVisible) Icons.Filled.KeyboardHide else Icons.Filled.Keyboard,
+                        stringResource(if (keyboardVisible) R.string.mobile_keyboard_hide else R.string.keyboard),
+                        tint = chatHint,
                     )
+                }
+                if (!keyboardVisible) {
+                    IconButton(onClick = ::submit, enabled = packet != null, modifier = Modifier.size(48.dp)) {
+                        Icon(Icons.Filled.Send, stringResource(R.string.mobile_chat_send), tint = chatAccent)
+                    }
                 }
             }
             if (tooLong) {
@@ -158,6 +210,19 @@ internal fun MobileFullscreenChatInput(
                     modifier = Modifier.padding(start = 14.dp, end = 12.dp, bottom = 8.dp),
                     color = Color(0xFFFFB8AD),
                     style = MaterialTheme.typography.labelMedium,
+                )
+            }
+            if (keyboardVisible) {
+                InlineKeyboard(
+                    enterLabel = R.string.mobile_chat_send,
+                    onText = { draft = insertChatText(draft, it) },
+                    onKey = { key ->
+                        when (key) {
+                            InlineKey.ENTER -> submit()
+                            InlineKey.PASTE -> clipboardText()?.let { draft = insertChatText(draft, it.toString()) }
+                            else -> draft = editChatText(draft, key)
+                        }
+                    },
                 )
             }
         }

@@ -756,6 +756,16 @@
     <string name="mobile_chat_window">Back to game</string>
     <string name="mobile_chat_send">Send</string>
     <string name="mobile_chat_too_long">Message is too long</string>
+    <string name="mobile_keyboard_hide">Hide keyboard</string>
+    <string name="mobile_keyboard_enter">Enter</string>
+    <string name="mobile_keyboard_shift">Shift</string>
+    <string name="mobile_keyboard_backspace">Backspace</string>
+    <string name="mobile_keyboard_space">Space</string>
+    <string name="mobile_keyboard_left">Move cursor left</string>
+    <string name="mobile_keyboard_right">Move cursor right</string>
+    <string name="mobile_keyboard_language">Switch keyboard language</string>
+    <string name="mobile_keyboard_android">Android</string>
+    <string name="mobile_keyboard_app">App keyboard</string>
     <string name="mobile_jump">Jump</string>
     <string name="mobile_diagnostics">Startup and connection</string>
     <string name="mobile_check_connection">Check connection</string>

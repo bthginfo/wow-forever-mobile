@@ -1167,9 +1167,12 @@ internal fun XServerScreen(
         }
     }
 
-    // Shows the soft keyboard, anchored to [anchor]. Handles the Android 12+
-    // post-delay quirk and routes input to the external display IME when needed.
-    val showSoftKeyboard: (View, String) -> Unit = { anchor, _ ->
+    val showSoftKeyboard: (View, String) -> Unit = openKeyboard@{ anchor, _ ->
+        val displayId = anchor.display?.displayId ?: Display.DEFAULT_DISPLAY
+        if (displayId == Display.DEFAULT_DISPLAY && imeInputReceiver != null) {
+            mobileControls.showGuestKeyboard(true)
+            return@openKeyboard
+        }
         anchor.post {
             if (anchor.windowToken != null) {
                 val show = {
@@ -1427,14 +1430,17 @@ internal fun XServerScreen(
             return@gameBack
         }
 
-        if (mobileControls.chatting) {
-            imeInputReceiver?.hideKeyboard()
-            mobileControls.closeChat()
+        if (mobileControls.chatting || mobileControls.chatFullscreen) {
+            when {
+                mobileControls.chatKeyboardVisible -> mobileControls.showChatKeyboard(false)
+                mobileControls.chatFullscreen -> mobileControls.showChatFullscreen(false)
+                else -> mobileControls.closeChat()
+            }
             return@gameBack
         }
 
-        if (mobileControls.chatFullscreen) {
-            mobileControls.showChatFullscreen(false)
+        if (mobileControls.guestKeyboardVisible) {
+            mobileControls.showGuestKeyboard(false)
             return@gameBack
         }
 
@@ -1994,18 +2000,9 @@ internal fun XServerScreen(
                     .also { mobileControls.attach(getxServer(), it, saveArc) }
                 PluviaApp.touchpadView?.setMoveCursorToTouchpoint(PrefManager.getBoolean("move_cursor_to_touchpoint", false))
 
-                // Wire keyboard toggle callback for gesture "Show Keyboard" action.
-                // Mirrors the QuickMenuAction.KEYBOARD external-display routing
-                // (uses imeInputReceiver on external displays) but skips the
-                // 500ms post-delay used by the menu path — a gesture is already
-                // a direct touch interaction and should respond immediately.
                 PluviaApp.touchpadView?.setShowKeyboardCallback {
                     val anchor = PluviaApp.touchpadView ?: return@setShowKeyboardCallback
-                    anchor.post {
-                        if (anchor.windowToken == null) return@post
-                        imeInputReceiver?.showKeyboard()
-                            ?: imm.toggleSoftInput(InputMethodManager.SHOW_FORCED, 0)
-                    }
+                    showSoftKeyboard(anchor, "onscreen_keyboard_enabled_from_gesture")
                 }
 
                 // Wire click highlight + gesture debug listener

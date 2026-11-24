@@ -28,6 +28,10 @@ internal class MobileTouchControls(private val touchSlop: Float) {
         private set
     var chatFullscreen by mutableStateOf(false)
         private set
+    var chatKeyboardVisible by mutableStateOf(false)
+        private set
+    var guestKeyboardVisible by mutableStateOf(false)
+        private set
     var chatComposerFocused = false
         private set
     var hudEditor by mutableStateOf<MobileHudEditor?>(null)
@@ -84,6 +88,7 @@ internal class MobileTouchControls(private val touchSlop: Float) {
         if (!playing) return
         if (chatting) closeChat()
         showChatFullscreen(false)
+        showGuestKeyboard(false)
         closeHudEditor()
         releaseAll()
         touchpad?.cancelTouchInput()
@@ -95,12 +100,14 @@ internal class MobileTouchControls(private val touchSlop: Float) {
         releaseAll()
         touchpad?.cancelTouchInput()
         chatting = active
+        if (!active) {
+            chatKeyboardVisible = false
+            chatComposerFocused = false
+        }
     }
 
-    fun closeChat(send: Boolean = false) {
-        if (!chatting) return
-        setChatActive(false)
-        tap(if (send) XKeycode.KEY_ENTER else XKeycode.KEY_ESC)
+    fun closeChat() {
+        if (chatting) setChatActive(false)
     }
 
     fun showChatFullscreen(active: Boolean) {
@@ -108,18 +115,36 @@ internal class MobileTouchControls(private val touchSlop: Float) {
         releaseAll()
         touchpad?.cancelTouchInput()
         chatFullscreen = active
-        if (!active) chatComposerFocused = false
+        if (!active) {
+            chatComposerFocused = false
+            chatKeyboardVisible = false
+        }
         tap(if (active) XKeycode.KEY_M else XKeycode.KEY_C, modified = true)
     }
 
     fun focusChatComposer(focused: Boolean) {
-        chatComposerFocused = chatFullscreen && focused
+        chatComposerFocused = (chatFullscreen || chatting) && focused
     }
 
-    fun transferFullscreenChat(packet: String, type: (String) -> Unit): Boolean {
-        if (!playing || !chatFullscreen || chatting || server == null) return false
+    fun showChatKeyboard(visible: Boolean) {
+        chatKeyboardVisible = visible && (chatFullscreen || chatting)
+    }
+
+    fun showGuestKeyboard(visible: Boolean) {
+        if (visible == guestKeyboardVisible) return
+        if (visible) {
+            closeChat()
+            showChatFullscreen(false)
+        }
+        releaseAll()
+        touchpad?.cancelTouchInput()
+        guestKeyboardVisible = visible
+    }
+
+    fun transferChat(packet: String, type: (String) -> Unit): Boolean {
+        if (!playing || (!chatFullscreen && !chatting) || server == null) return false
         tap(XKeycode.KEY_U, modified = true)
-        type(packet)
+        type(if (chatting && packet.startsWith('m')) "c" + packet.drop(1) else packet)
         return true
     }
 
@@ -193,6 +218,8 @@ internal class MobileTouchControls(private val touchSlop: Float) {
         chatting = false
         chatFullscreen = false
         chatComposerFocused = false
+        chatKeyboardVisible = false
+        guestKeyboardVisible = false
     }
 
     fun tap(key: XKeycode, modified: Boolean = false) {
@@ -224,7 +251,7 @@ internal class MobileTouchControls(private val touchSlop: Float) {
             null -> Unit
         }
         if (event.getToolType(0) != MotionEvent.TOOL_TYPE_FINGER) return false
-        if (chatFullscreen) {
+        if (chatFullscreen || guestKeyboardVisible) {
             routeEditorPointer(event)
             return true
         }

@@ -1192,7 +1192,7 @@ assert(frames.ForeverTouchRightAction1.attributes.item == "item:508", "the recei
 C_Timer.After = after
 
 -- The Android composer keeps its draft in Android and sends one message to the
--- selected WoW chat. IME layout changes never open or submit the stock editor.
+-- selected WoW chat. Keyboard layout changes never open or submit the stock editor.
 local fullscreenChat = login(first, nil, nil, {nativeKeyboard = true})
 click("FullscreenChat")
 local bridge = frames.ForeverTouchChatTransport
@@ -1258,7 +1258,11 @@ inputPacket(messagePacket("Gildenchat"))
 assert(#delivered == 3 and delivered[3].kind == "GUILD")
 click("CompactChat")
 inputPacket(messagePacket("Wrong screen"))
-assert(#delivered == 3, "closing full chat disables native compose")
+assert(#delivered == 3, "a fullscreen message arriving after a mode change is discarded")
+local compactGreeting = " Grüße im kleinen Chat! "
+inputPacket("c" .. messagePacket(compactGreeting):sub(2))
+assert(#delivered == 4 and delivered[4].text == compactGreeting and delivered[4].kind == "GUILD",
+    "the compact composer preserves Unicode and the selected channel")
 IsInGuild = function() return false end
 ChatFrame_OpenChat, ChatEdit_GetActiveWindow = nil, nil
 C_Timer.After = after

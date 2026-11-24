@@ -692,6 +692,16 @@
     <string name="mobile_chat_window">Zurück zum Spiel</string>
     <string name="mobile_chat_send">Senden</string>
     <string name="mobile_chat_too_long">Nachricht ist zu lang</string>
+    <string name="mobile_keyboard_hide">Tastatur einklappen</string>
+    <string name="mobile_keyboard_enter">Enter</string>
+    <string name="mobile_keyboard_shift">Umschalten</string>
+    <string name="mobile_keyboard_backspace">Rücktaste</string>
+    <string name="mobile_keyboard_space">Leerzeichen</string>
+    <string name="mobile_keyboard_left">Cursor nach links</string>
+    <string name="mobile_keyboard_right">Cursor nach rechts</string>
+    <string name="mobile_keyboard_language">Tastatursprache wechseln</string>
+    <string name="mobile_keyboard_android">Android</string>
+    <string name="mobile_keyboard_app">App-Tastatur</string>
     <string name="mobile_jump">Sprung</string>
     <string name="mobile_diagnostics">Start und Verbindung</string>
     <string name="mobile_check_connection">Verbindung prüfen</string>

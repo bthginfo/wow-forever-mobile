@@ -340,6 +340,23 @@ class MobileTouchControlsTest {
         assertFalse(controls.chatting)
     }
 
+    @Test
+    fun compactChatRoutesItsOwnPacketAndDismissesItsKeyboard() {
+        val controls = MobileTouchControls(8f)
+        controls.attach(mockk<XServer>(relaxed = true), mockk<TouchpadView>(relaxed = true))
+        controls.togglePlaying()
+        controls.setChatActive(true)
+        controls.showChatKeyboard(true)
+        assertTrue(controls.chatKeyboardVisible)
+        var packet: String? = null
+        assertTrue(controls.transferChat("m00161") { packet = it })
+        assertEquals("c00161", packet)
+
+        controls.closeChat()
+        assertFalse(controls.chatKeyboardVisible)
+        assertFalse(controls.transferChat("m00161") { error("closed chat must not send") })
+    }
+
     private fun keysAt(x: Float, y: Float): Set<XKeycode> {
         val mask = movementKeys(x, y)
         return MOVEMENT_KEYS.filterIndexed { index, _ -> mask and (1 shl index) != 0 }.toSet()

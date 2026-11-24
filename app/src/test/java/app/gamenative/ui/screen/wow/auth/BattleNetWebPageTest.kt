@@ -3,7 +3,11 @@ package app.gamenative.ui.screen.wow.auth
 import android.app.Activity
 import android.app.Application
 import android.content.MutableContextWrapper
+import android.content.Context
 import android.os.Looper
+import android.view.inputmethod.BaseInputConnection
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputConnection
 import android.webkit.WebView
 import android.widget.FrameLayout
 import org.junit.Assert.assertEquals
@@ -19,6 +23,28 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(application = Application::class, sdk = [34])
 class BattleNetWebPageTest {
+    @Test
+    fun typesOnlyIntoTheActiveAllowedWebEditor() {
+        val activity = Robolectric.buildActivity(Activity::class.java).setup()
+        val editor = TestEditor(activity.get())
+        try {
+            dispatchBattleNetInlineInput(editor, { true }) { commitText("ü7@", 1) }
+            assertEquals(listOf("ü7@"), editor.received)
+
+            editor.editorFocused = false
+            dispatchBattleNetInlineInput(editor, { true }) { commitText("no editor", 1) }
+            editor.editorFocused = true
+            editor.address = "https://example.test/form"
+            dispatchBattleNetInlineInput(editor, { true }) { commitText("wrong origin", 1) }
+            editor.address = "https://eu.battle.net/login"
+            dispatchBattleNetInlineInput(editor, { false }) { commitText("expired session", 1) }
+            assertEquals(listOf("ü7@"), editor.received)
+        } finally {
+            editor.destroy()
+            activity.pause().stop().destroy()
+        }
+    }
+
     @Test
     fun keepsTheLivePageDuringAnAppSwitchAndReattachesItToANewDialogHost() {
         val first = Robolectric.buildActivity(Activity::class.java).setup()
@@ -68,5 +94,23 @@ class BattleNetWebPageTest {
         page.attach(host)
         assertEquals(0, host.childCount)
         activity.pause().stop().destroy()
+    }
+
+    private class TestEditor(context: Context) : WebView(context) {
+        var address = "https://eu.battle.net/login"
+        var editorFocused = true
+        val received = mutableListOf<String>()
+
+        override fun isAttachedToWindow() = true
+        override fun hasWindowFocus() = true
+        override fun hasFocus() = true
+        override fun onCheckIsTextEditor() = editorFocused
+        override fun getUrl() = address
+        override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection = object : BaseInputConnection(this, true) {
+            override fun commitText(text: CharSequence?, newCursorPosition: Int): Boolean {
+                received += text.toString()
+                return true
+            }
+        }
     }
 }
