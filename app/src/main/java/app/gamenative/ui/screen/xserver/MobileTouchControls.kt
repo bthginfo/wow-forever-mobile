@@ -26,6 +26,8 @@ internal class MobileTouchControls(private val touchSlop: Float) {
         private set
     var chatting by mutableStateOf(false)
         private set
+    var chatFullscreen by mutableStateOf(false)
+        private set
     var hudEditor by mutableStateOf<MobileHudEditor?>(null)
         private set
     var lookSensitivity = 1f
@@ -70,6 +72,8 @@ internal class MobileTouchControls(private val touchSlop: Float) {
 
     fun useLoginControls() {
         if (!playing) return
+        if (chatting) closeChat()
+        setChatFullscreen(false)
         closeHudEditor()
         releaseAll()
         touchpad?.cancelTouchInput()
@@ -89,8 +93,16 @@ internal class MobileTouchControls(private val touchSlop: Float) {
         tap(if (send) XKeycode.KEY_ENTER else XKeycode.KEY_ESC)
     }
 
+    fun setChatFullscreen(active: Boolean) {
+        if (chatFullscreen == active || !playing || chatting || hudEditor != null) return
+        releaseAll()
+        touchpad?.cancelTouchInput()
+        chatFullscreen = active
+        tap(if (active) XKeycode.KEY_M else XKeycode.KEY_C, modified = true)
+    }
+
     fun openHudEditor(editor: MobileHudEditor) {
-        if (!playing || chatting || hudEditor != null) return
+        if (!playing || chatting || chatFullscreen || hudEditor != null) return
         releaseAll()
         touchpad?.cancelTouchInput()
         hudEditor = editor
@@ -128,6 +140,7 @@ internal class MobileTouchControls(private val touchSlop: Float) {
         server = null
         touchpad = null
         chatting = false
+        chatFullscreen = false
     }
 
     fun tap(key: XKeycode, modified: Boolean = false) {
@@ -157,12 +170,16 @@ internal class MobileTouchControls(private val touchSlop: Float) {
             }
             null -> Unit
         }
-        val geometry = layout ?: return false
         if (event.getToolType(0) != MotionEvent.TOOL_TYPE_FINGER) return false
+        if (chatFullscreen) {
+            routeEditorPointer(event)
+            return true
+        }
         if (chatting) {
             routeChat(event)
             return true
         }
+        val geometry = layout ?: return false
 
         val index = event.actionIndex
         val pointerId = event.getPointerId(index)

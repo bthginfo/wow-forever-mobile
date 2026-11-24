@@ -93,12 +93,14 @@ internal fun BoxScope.MobileGameOverlay(
                 controls.closeChat()
                 receiver.hideKeyboard()
             }
+            controls.setChatFullscreen(false)
             controls.closeHudEditor()
             controls.releaseAll()
         }
     }
     val playing = controls.playing && canPlayWithTouch
     val chatting = playing && controls.chatting
+    val chatFullscreen = playing && controls.chatFullscreen
     val editor = controls.hudEditor.takeIf { playing }
     val editingControls = editor == MobileHudEditor.Controls
     var showMenu by remember { mutableStateOf(false) }
@@ -115,7 +117,7 @@ internal fun BoxScope.MobileGameOverlay(
     }
     SideEffect { controls.lookSensitivity = sensitivity }
 
-    val compactToolbar = toolbarMinimized && playing && !chatting && editor == null
+    val compactToolbar = toolbarMinimized && playing && !chatting && !chatFullscreen && editor == null
     fun setToolbarMinimized(minimized: Boolean) {
         toolbarMinimized = minimized
         preferences.edit().putBoolean("toolbar_minimized", minimized).apply()
@@ -134,6 +136,12 @@ internal fun BoxScope.MobileGameOverlay(
     fun finishChat(send: Boolean) {
         controls.closeChat(send)
         receiver.hideKeyboard()
+    }
+
+    fun composeMessage() {
+        controls.setChatActive(true)
+        controls.tap(XKeycode.KEY_F8, modified = true)
+        receiver.showKeyboard { finishChat(send = true) }
     }
 
     val density = LocalDensity.current
@@ -158,27 +166,27 @@ internal fun BoxScope.MobileGameOverlay(
                 positions = activePositions, tabletDensity = tabletDensity,
             )
         }
-        val toolbarSize = if (compactToolbar) with(density) { 48.dp.roundToPx().let { IntSize(it, it) } } else toolbar
+        val toolbarSize = toolbar
         val defaultToolbar = Rect(
             Offset(safeArea.center.x - toolbarSize.width / 2f, top + topMargin),
             Size(toolbarSize.width.toFloat(), toolbarSize.height.toFloat()),
         )
         val toolbarBounds = safeArea.placeMobileHudElement(defaultToolbar, activePositions[MobileHudElement.Toolbar])
 
-        if (playing && !chatting && editor != MobileHudEditor.Skills && viewport != IntSize.Zero) {
+        if (playing && !chatting && !chatFullscreen && editor != MobileHudEditor.Skills && viewport != IntSize.Zero) {
             SideEffect { controls.updateLayout(layout) }
             MobileControlSurface(controls, layout, editingControls)
         }
 
         if (editor != MobileHudEditor.Skills) {
-            val toolbarModifier = if (playing && !chatting && safeArea.width > 0f) {
+            val toolbarModifier = if (playing && !chatting && !chatFullscreen && safeArea.width > 0f) {
                 Modifier.align(Alignment.TopCenter)
                     .absoluteOffset {
                         val centeredLeft = (viewport.width - toolbarSize.width) / 2f
                         IntOffset((toolbarBounds.left - centeredLeft).roundToInt(), toolbarBounds.top.roundToInt())
                     }
                     .widthIn(max = with(density) { safeArea.width.toDp() })
-                    .onSizeChanged { if (!compactToolbar) toolbar = it }
+                    .onSizeChanged { toolbar = it }
             } else {
                 Modifier.align(Alignment.TopCenter).safeDrawingPadding().padding(top = 5.dp)
                     .onSizeChanged { toolbar = it }
@@ -192,8 +200,12 @@ internal fun BoxScope.MobileGameOverlay(
                 shadowElevation = 3.dp,
             ) {
                 if (compactToolbar) {
-                    IconButton(onClick = { setToolbarMinimized(false) }, modifier = Modifier.size(48.dp)) {
-                        Icon(Icons.Filled.KeyboardArrowDown, stringResource(R.string.mobile_expand_toolbar), tint = overlayAccent)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        ToolbarText(R.string.mobile_chat, Icons.Filled.ChatBubbleOutline, field = true, onClick = ::composeMessage)
+                        ToolbarText(R.string.mobile_chat_fullscreen) { controls.setChatFullscreen(true) }
+                        IconButton(onClick = { setToolbarMinimized(false) }, modifier = Modifier.size(48.dp)) {
+                            Icon(Icons.Filled.KeyboardArrowDown, stringResource(R.string.mobile_expand_toolbar), tint = overlayAccent)
+                        }
                     }
                     return@Surface
                 }
@@ -209,16 +221,17 @@ internal fun BoxScope.MobileGameOverlay(
                         ToolbarText(R.string.mobile_paste, Icons.Filled.ContentPaste) { receiver.pasteFromClipboard(chat = true) }
                         ToolbarText(R.string.mobile_chat_send, accent = true) { finishChat(send = true) }
                         ToolbarText(android.R.string.cancel) { finishChat(send = false) }
+                    } else if (chatFullscreen) {
+                        ToolbarText(R.string.mobile_chat_window) { controls.setChatFullscreen(false) }
+                        ToolbarText(R.string.mobile_chat, Icons.Filled.ChatBubbleOutline, field = true, onClick = ::composeMessage)
                     } else if (playing) {
                         Row(
                             modifier = Modifier.weight(1f, fill = false).horizontalScroll(rememberScrollState()),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            ToolbarText(R.string.mobile_chat, Icons.Filled.ChatBubbleOutline, accent = true, enabled = !editingControls) {
-                                controls.setChatActive(true)
-                                controls.tap(XKeycode.KEY_F8, modified = true)
-                                receiver.showKeyboard { finishChat(send = true) }
-                            }
+                            ToolbarText(R.string.mobile_chat, Icons.Filled.ChatBubbleOutline, field = true,
+                                enabled = !editingControls, onClick = ::composeMessage)
+                            ToolbarText(R.string.mobile_chat_fullscreen, enabled = !editingControls) { controls.setChatFullscreen(true) }
                             ToolbarText(R.string.mobile_character, enabled = !editingControls) { controls.tap(XKeycode.KEY_F3, modified = true) }
                             Box {
                                 ToolbarText(R.string.mobile_social, enabled = !editingControls) { showSocial = true }
@@ -257,13 +270,13 @@ internal fun BoxScope.MobileGameOverlay(
                         }
                     }
 
-                    if (playing && !chatting && editor == null) {
+                    if (playing && !chatting && !chatFullscreen && editor == null) {
                         IconButton(onClick = { setToolbarMinimized(true) }, modifier = Modifier.size(48.dp)) {
                             Icon(Icons.Filled.KeyboardArrowUp, stringResource(R.string.mobile_collapse_toolbar))
                         }
                     }
 
-                    if (!chatting) Box {
+                    if (!chatting && !chatFullscreen) Box {
                         IconButton(onClick = { showMenu = true }, modifier = Modifier.size(44.dp), enabled = !editingControls) {
                             Icon(Icons.Filled.MoreVert, stringResource(R.string.mobile_more))
                         }
@@ -396,12 +409,14 @@ private fun ToolbarText(
     icon: ImageVector? = null,
     accent: Boolean = false,
     enabled: Boolean = true,
+    field: Boolean = false,
     onClick: () -> Unit,
 ) {
     TextButton(
         onClick = onClick,
         enabled = enabled,
         colors = ButtonDefaults.textButtonColors(
+            containerColor = if (field) Color(0xFF263338) else Color.Transparent,
             contentColor = if (accent) overlayAccent else overlayText,
             disabledContentColor = overlayText.copy(alpha = .74f),
         ),

@@ -695,6 +695,8 @@ local clickBindings = {
     ["CTRL-SHIFT-F"] = clickBinding("FrameLimit", toggleFrameLimit),
     ["CTRL-SHIFT-F7"] = clickBinding("OpenEditor", openEditor),
     ["CTRL-SHIFT-F8"] = clickBinding("OpenChat", Chat.open),
+    ["CTRL-SHIFT-M"] = clickBinding("FullscreenChat", function() Chat.setFullscreen(true) end),
+    ["CTRL-SHIFT-C"] = clickBinding("CompactChat", function() Chat.setFullscreen(false) end),
     ["CTRL-SHIFT-F1"] = clickBinding("SaveEditor", function() finishEditing(true) end),
     ["CTRL-SHIFT-F2"] = clickBinding("CancelEditor", function() finishEditing(false) end),
     ["CTRL-SHIFT-HOME"] = clickBinding("ResetEditor", resetEditor),
@@ -898,8 +900,12 @@ end
 
 local function loadHudPreferences()
     loadPreferences()
-    Chat.initialize(preferences.mobileChatOpen, function(expanded)
+    Chat.initialize(preferences, function(expanded, width, height)
+        local size = preferences.mobileChatSize
+        if preferences.mobileChatOpen == expanded and size
+                and size.width == width and size.height == height then return end
         preferences.mobileChatOpen = expanded
+        preferences.mobileChatSize = width and height and { width = width, height = height } or nil
         preferences.revision = preferenceRevision(preferences) + 1
         checkpointPreferences()
     end)
@@ -909,7 +915,6 @@ for _, event in ipairs({
     "GROUP_ROSTER_UPDATE", "PLAYER_GUILD_UPDATE", "PLAYER_LOGIN", "PLAYER_LOGOUT", "PLAYER_ENTERING_WORLD", "ACTIONBAR_SLOT_CHANGED", "ACTIONBAR_PAGE_CHANGED",
     "DISPLAY_SIZE_CHANGED", "UI_SCALE_CHANGED", "PLAYER_REGEN_ENABLED", "EDIT_MODE_LAYOUTS_UPDATED",
     "PLAYER_SPECIALIZATION_CHANGED", "UPDATE_CHAT_WINDOWS", "UPDATE_FLOATING_CHAT_WINDOWS",
-    "CHAT_MSG_WHISPER", "CHAT_MSG_BN_WHISPER",
     "ACTIONBAR_UPDATE_COOLDOWN", "ACTIONBAR_UPDATE_USABLE", "BAG_UPDATE_DELAYED",
     "SPELLS_CHANGED", "SPELL_TEXT_UPDATE", "UPDATE_BONUS_ACTIONBAR", "UPDATE_OVERRIDE_ACTIONBAR",
     "SPELL_UPDATE_COOLDOWN", "SPELL_UPDATE_CHARGES", "SPELL_UPDATE_USABLE", "BAG_UPDATE_COOLDOWN",
@@ -947,8 +952,6 @@ events:SetScript("OnEvent", function(_, event, spellID)
         Chat.updateChannels()
     elseif event == "DISPLAY_SIZE_CHANGED" or event == "UI_SCALE_CHANGED" then
         layoutHUD()
-    elseif event == "CHAT_MSG_WHISPER" or event == "CHAT_MSG_BN_WHISPER" then
-        Chat.whisper()
     elseif event == "SPELLS_CHANGED" or event == "SPELL_TEXT_UPDATE" then
         if event == "SPELLS_CHANGED" or (spellRanks and not isSecret(spellID) and spellRanks.pending[spellID]) then
             spellRanksDirty = true

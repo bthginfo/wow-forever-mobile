@@ -13,6 +13,7 @@ end
 
 CopyTable = copy
 unpack = table.unpack
+date = os.date
 
 local function guarded(frame)
     assert(not (combat and frame.protected and not secureClick), "insecure change to a protected frame during combat")
@@ -47,7 +48,18 @@ local methods = {
     GetAttribute = function(self, name) return self.attributes[name] end,
     SetFrameRef = function(self, name, frame) guarded(self); self.refs[name] = frame end,
     GetFrameRef = function(self, name) return self.refs[name] end,
-    GetFrameLevel = function() return 1 end,
+    GetFrameLevel = function(self) return rawget(self, "level") or 1 end,
+    GetFrameStrata = function(self) return rawget(self, "strata") or "MEDIUM" end,
+    SetFrameStrata = function(self, value) self.strata = value end,
+    SetChatType = function(self, value) self.chatType = value end,
+    SetTellTarget = function(self, value) self.tellTarget = value end,
+    SetFocus = function(self) self.focused = true end,
+    HasFocus = function(self) return self.focused == true end,
+    ClearFocus = function(self)
+        self.focused = false
+        if self.scripts.OnEditFocusLost then self.scripts.OnEditFocusLost(self) end
+    end,
+    AddMessage = function(self, value) self.lines[#self.lines + 1] = value end,
     SetText = function(self, value) self.text = value end,
     SetSwipeColor = function(self, _, _, _, alpha) self.swipeAlpha = alpha end,
     SetVertexColor = function(self, red) self.red = red end,
@@ -64,7 +76,7 @@ local methods = {
         assert(not issecretvalue(timer) and clearIfZero)
         self.timer = timer
     end,
-    Clear = function(self) self.timer = nil end,
+    Clear = function(self) self.timer = nil; self.lines = {} end,
     GetName = function(self) return self.name end,
     GetWidth = function(self) return self.width end,
     GetHeight = function(self) return self.height end,
@@ -84,6 +96,7 @@ local methods = {
     GetNumPoints = function(self) return #(rawget(self, "points") or {}) end,
     GetPoint = function(self, index) return table.unpack(self.points[index or 1]) end,
     SetWidth = function(self, width) guarded(self); self.width = width end,
+    SetHeight = function(self, height) guarded(self); self.height = height end,
     IsProtected = function(self) return self.protected end,
     IsShown = function(self) return self.shown end,
     Show = function(self) guarded(self); self.shown = true end,
@@ -126,6 +139,7 @@ function SetOverrideBinding(_, _, key, command) bindings[key] = command end
 function SetOverrideBindingClick(_, _, key, button) bindings[key] = button end
 function SaveBindings() error("The HUD must leave WoW's keyboard bindings alone") end
 function IsInGroup() return false end
+function IsInRaid() return false end
 function IsInGuild() return false end
 C_Timer = { After = function(_, callback) callback() end }
 C_UI = {
@@ -193,6 +207,7 @@ local function login(guid, characterSaved, accountSaved, options)
     }
     assert(loadfile(source .. "/ForeverTouchActions.lua"))("ForeverTouch", addon)
     if options.realPicker then assert(loadfile(source .. "/ForeverTouchPicker.lua"))("ForeverTouch", addon) end
+    assert(loadfile(source .. "/ForeverTouchChatHistory.lua"))("ForeverTouch", addon)
     assert(loadfile(source .. "/ForeverTouchChat.lua"))("ForeverTouch", addon)
     assert(loadfile(source .. "/ForeverTouchMobileLayout.lua"))("ForeverTouch", addon)
     -- The client loads SavedVariables after running the add-on's Lua chunks.
@@ -562,97 +577,148 @@ assert(frames.ForeverTouchLeftAction1.attributes.spell == 301 and messages[1] ==
 login(nil, nil, account, { name = "Miner", realm = "Other Realm" })
 assert(not frames.ForeverTouchLeftAction1, "the same character name on another realm must not share a profile")
 
--- Previous mobile builds could save an upper-left position. The new dock is beside the map.
-login(first, {useSavedChatLayout = true})
-local chat = DEFAULT_CHAT_FRAME
+-- The new dock preserves existing layout and uses the same message model in both views.
+local chatAddon = login(first, {useSavedChatLayout = true})
+local post, history = chatAddon.chat.onMessage, chatAddon.chatHistory
+local native = DEFAULT_CHAT_FRAME
+local panel = frames.ForeverTouchChatPanel
+local transcript = frames.ForeverTouchChatTranscript
 local toggleChat = frames.ForeverTouchChatToggle
 local dot = frames.ForeverTouchUnreadWhisper
 local party = CreateFrame("Frame", "CompactPartyFrame", UIParent)
 party:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 30, -100)
 
-local function assertBesideMap(frame, top)
-    local point, relative, relativePoint, x, y = frame:GetPoint()
+local function assertBesideMap(frame)
+    local point, relative, relativePoint, x = frame:GetPoint()
     assert(point == "TOPRIGHT" and relative == UIParent and relativePoint == "TOPRIGHT")
-    assert(UIParent:GetWidth() + x < MinimapCluster:GetLeft(), "the frame must end to the left of the minimap")
-    assert(UIParent:GetWidth() + x - frame:GetWidth() >= UIParent:GetWidth() * .25, "keep the group area free")
-    assert(math.abs(y + top * UIParent:GetHeight()) < .001)
+    assert(UIParent:GetWidth() + x < MinimapCluster:GetLeft(), "chat must sit to the left of the minimap")
+    assert(UIParent:GetWidth() + x - frame:GetWidth() >= UIParent:GetWidth() * .22, "keep the group area free")
 end
 
-assertBesideMap(toggleChat, .139)
-assertBesideMap(chat, .245)
-assert(toggleChat:IsVisible() and not chat:IsVisible() and chat:IsShown(), "collapse keeps native chat alive")
-assert(not dot:IsShown())
-event(nil, "CHAT_MSG_WHISPER", secret, secret)
-assert(dot:IsShown() and not chat:IsVisible(), "incoming whispers signal with a dot without expanding")
+assertBesideMap(toggleChat)
+assert(native:IsShown() and not native:IsVisible() and not panel:IsVisible())
+post("CHAT_MSG_WHISPER", secret, secret)
+assert(dot:IsShown() and not panel:IsVisible(), "restricted whispers still signal")
 click("ChatToggle")
-assert(chat:IsVisible() and not dot:IsShown() and ForeverTouchPreferences.mobileChatOpen)
-event(nil, "CHAT_MSG_WHISPER", "hello")
-assert(not dot:IsShown(), "a visible chat does not need an unopened-chat badge")
+assert(frames.ForeverTouchChatStock:IsVisible(), "the native chat remains available for restricted whispers")
+click("ChatStock")
+assert(native:IsVisible() and not panel:IsVisible() and not dot:IsShown())
 click("ChatToggle")
-event(nil, "CHAT_MSG_BN_WHISPER", "hello")
-assert(dot:IsShown() and not chat:IsVisible(), "Battle.net whispers also signal")
-assert(not registered.CHAT_MSG_WHISPER_INFORM and not registered.CHAT_MSG_BN_WHISPER_INFORM)
-
-local conversation = CreateFrame("Frame", "ChatFrame4", UIParent)
-conversation.chatType = "BN_WHISPER"
-local tab = CreateFrame("Button", "ChatFrame4Tab", GENERAL_CHAT_DOCK)
-_G.ChatFrame4Tab = tab
-local selectedWhisper
-ChatFrameUtil = {IsTabAlerting = function(frame) return frame == tab end}
-FCF_SelectDockFrame = function(frame) selectedWhisper = frame end
-table.insert(GENERAL_CHAT_DOCK.windows, conversation)
-event(nil, "UPDATE_CHAT_WINDOWS")
-assert(conversation:IsShown() and not conversation:IsVisible(), "new docked conversations follow the collapsed panel")
-click("ChatToggle")
-assert(conversation:IsVisible() and GENERAL_CHAT_DOCK:IsVisible())
-assert(selectedWhisper == conversation, "opening the badge selects the native unread whisper tab")
-FCF_SelectDockFrame, _G.ChatFrame4Tab, ChatFrameUtil = nil, nil, nil
-table.remove(GENERAL_CHAT_DOCK.windows)
-event(nil, "UPDATE_CHAT_WINDOWS")
-assert(conversation:GetParent() == UIParent, "an undocked window keeps its independent visibility")
+assert(panel:IsVisible() and not native:IsVisible())
 click("ChatToggle")
 
-local entry = CreateFrame("EditBox", nil, chat)
+post("CHAT_MSG_PARTY", "Party hello", "PartyFriend")
+post("CHAT_MSG_RAID_LEADER", "Raid hello", "RaidLead")
+post("CHAT_MSG_GUILD", "Guild hello", "GuildFriend")
+post("CHAT_MSG_WHISPER", "A", "Aria-Moon")
+post("CHAT_MSG_WHISPER", "B", "Aria-Sun")
+post("CHAT_MSG_BN_WHISPER_INFORM", "My BN reply", "Aria-Moon")
+post("CHAT_MSG_WHISPER_INFORM", "My realm reply", "Aria-Moon")
+assert(dot:IsVisible() and not panel:IsVisible())
+assert(registered.CHAT_MSG_WHISPER_INFORM and registered.CHAT_MSG_BN_WHISPER_INFORM)
+assert(#history.contacts == 3, "cross-realm players and Battle.net contacts stay separate")
+assert(history.peers["BN_WHISPER:aria-moon"].unread == 0, "outgoing whispers must never flag unread")
+click("ChatToggle")
+assertBesideMap(panel)
+assert(panel:IsVisible() and dot:IsVisible(), "only the displayed conversation is marked read")
+assert(#transcript.lines == 2 and transcript.lines[2]:find("My realm reply", 1, true))
+click("FullscreenChat")
+assert(panel:GetWidth() > UIParent:GetWidth() * .9 and not toggleChat:IsVisible())
+click("ChatTabPARTY")
+assert(#transcript.lines == 1 and transcript.lines[1]:find("Party hello", 1, true))
+click("ChatTabRAID")
+assert(#transcript.lines == 1 and transcript.lines[1]:find("Raid hello", 1, true))
+click("ChatTabGUILD")
+assert(#transcript.lines == 1 and transcript.lines[1]:find("Guild hello", 1, true))
+click("ChatTabWHISPER")
+assert(#transcript.lines == 0, "select a contact to read individual messages")
+click("ChatContact3")
+assert(#transcript.lines == 1 and transcript.lines[1]:find("Aria-Sun", 1, true) and not dot:IsShown())
+
+local entry = CreateFrame("EditBox", "ChatFrame1EditBox", native)
 entry:SetSize(390, 28)
-entry:SetPoint("TOP", chat, "BOTTOM", 0, -3)
-entry.chatFrame = chat
-entry.HasFocus = function(self) return self:IsVisible() end
-ChatFrameUtil = {GetActiveWindow = function() return entry end, OpenChat = function() return entry end}
-event(nil, "CHAT_MSG_WHISPER", "while collapsed")
+entry:SetPoint("TOP", native, "BOTTOM", 0, -3)
+entry.chatFrame = native
+local active
+ChatFrame_OpenChat = function()
+    active = entry
+    entry:SetFocus()
+end
+ChatEdit_GetActiveWindow = function() return active end
 click("OpenChat")
-assertBesideMap(entry, .147)
-assert(chat:IsVisible() and not toggleChat:IsShown() and not dot:IsShown(), "typing opens a collapsed panel temporarily")
-assertBesideMap(control("Guild").parent, .415)
-entry.scripts.OnEditFocusLost(entry)
-assert(toggleChat:IsVisible() and not chat:IsVisible() and entry:GetPoint() == "TOP" and entry:GetWidth() == 390)
+assert(entry:GetParent() == panel and entry.chatType == "WHISPER" and entry.tellTarget == "Aria-Sun")
+click("ChatTabGUILD")
+assert(#transcript.lines == 1 and transcript.lines[1]:find("Aria-Sun", 1, true),
+    "switching chats while typing cannot change or mislabel the recipient")
+entry:ClearFocus()
+assert(entry:GetParent() == native and entry:GetPoint() == "TOP" and entry:GetWidth() == 390)
+click("ChatTabGUILD")
+IsInGuild = function() return true end
+click("OpenChat")
+assert(entry.chatType == "GUILD")
+entry:ClearFocus()
+IsInGuild = function() return false end
+ChatFrame_OpenChat, ChatEdit_GetActiveWindow = nil, nil
+
+click("CompactChat")
+assertBesideMap(panel)
+local resizeHandle = frames.ForeverTouchChatResize
+resizeHandle.scripts.OnMouseDown(resizeHandle, "LeftButton")
+panel:SetSize(490, 280)
+resizeHandle.scripts.OnMouseUp(resizeHandle)
+assert(ForeverTouchPreferences.mobileChatSize.width == 490 / 720)
+assert(ForeverTouchPreferences.mobileChatSize.height == 280 / 720)
+assert(reloads == 0, "resizing never reloads the game")
 
 UIParent:SetSize(1200, 900)
 MinimapCluster.left = 935
 event(nil, "DISPLAY_SIZE_CHANGED")
-assertBesideMap(chat, .245)
-assertBesideMap(toggleChat, .139)
+assertBesideMap(toggleChat)
+assertBesideMap(panel)
 assert(party:GetPoint() == "TOPLEFT" and party:GetParent() == UIParent)
+
+local conversation = CreateFrame("Frame", "ChatFrame4", UIParent)
+table.insert(GENERAL_CHAT_DOCK.windows, conversation)
+event(nil, "UPDATE_CHAT_WINDOWS")
+assert(not conversation:IsVisible(), "new docked conversations follow the active mobile chat")
+table.remove(GENERAL_CHAT_DOCK.windows)
+event(nil, "UPDATE_CHAT_WINDOWS")
+assert(conversation:GetParent() == UIParent, "an undocked window keeps its independent visibility")
 
 local editing = true
 EditModeManagerFrame = {IsEditModeActive = function() return editing end}
 callbacks["EditMode.Enter"]()
-assert(chat:GetPoint() == "BOTTOMLEFT" and chat:GetParent() == UIParent and not toggleChat:IsVisible())
+assert(native:GetPoint() == "BOTTOMLEFT" and native:GetParent() == UIParent and not toggleChat:IsVisible())
+native:ClearAllPoints()
+native:SetPoint("TOPLEFT", UIParent, "TOPLEFT", 35, -40)
 editing = false
 callbacks["EditMode.Exit"]()
-assertBesideMap(chat, .245)
-assert(not chat:IsVisible() and toggleChat:IsVisible())
+assertBesideMap(panel)
+assert(not native:IsVisible() and toggleChat:IsVisible())
 EditModeManagerFrame = nil
 
 combat = true
 click("ChatToggle")
-assert(chat:IsVisible() and reloads == 0, "the toggle works during combat without reloading")
+assert(not panel:IsVisible() and reloads == 0, "the toggle works during combat without reloading")
 combat = false
+click("ChatToggle")
 local savedChat = copy(ForeverTouchPreferences)
 event(nil, "PLAYER_LOGOUT")
-assert(chat:GetParent() == UIParent and chat:GetPoint() == "BOTTOMLEFT")
-login(first, savedChat)
-assert(DEFAULT_CHAT_FRAME:IsVisible() and not frames.ForeverTouchUnreadWhisper:IsShown(), "only the open state is saved")
-ChatFrameUtil = nil
+assert(native:GetParent() == UIParent and native:GetPoint() == "TOPLEFT", "the saved native edit is preserved")
+local restored = login(first, savedChat)
+assert(frames.ForeverTouchChatPanel:IsVisible() and frames.ForeverTouchChatPanel:GetHeight() == 280)
+assert(not frames.ForeverTouchUnreadWhisper:IsShown() and #restored.chatHistory.contacts == 0,
+    "window size is saved, private messages are session only")
+
+for accountID = 10, 11 do
+    restored.chat.onMessage("CHAT_MSG_BN_WHISPER", "Hello", "Same name",
+        nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, accountID)
+end
+assert(#restored.chatHistory.contacts == 2, "Battle.net accounts with identical labels stay separate")
+for index = 1, 40 do restored.chat.onMessage("CHAT_MSG_WHISPER", "Hello", "Player-" .. index) end
+assert(#restored.chatHistory.contacts == 32, "the in-memory inbox is bounded")
+for index = 1, 200 do restored.chat.onMessage("CHAT_MSG_GUILD", "Hello " .. index, "GuildFriend") end
+assert(#restored.chatHistory.lines.GUILD == 100 and #restored.chatHistory.lines.ALL == 180)
 
 -- A secure set switch must be recoverable from the account snapshot during play.
 local twoSets = { revision = 8, mobileSlots = legacy.mobileSlots,
@@ -716,27 +782,6 @@ C_Item.GetItemCount = function() return secret end
 event(nil, "BAG_UPDATE_DELAYED")
 assert(consumable.count.text == "" and consumable.icon.red == 1)
 assert(charged.count.parent.parent == charged and charged.count.parent.level > charged.cooldown:GetFrameLevel())
-
--- Direct channel buttons follow membership changes while typing. A legacy open may return nil.
-ChatFrameUtil = nil
-local active
-local entry = CreateFrame("EditBox", nil, UIParent)
-entry:SetSize(380, 30)
-entry:SetPoint("TOP", UIParent, "TOP", 0, -10)
-entry.chatFrame = DEFAULT_CHAT_FRAME
-entry.HasFocus = function() return true end
-ChatFrame_OpenChat = function() active = entry end
-ChatEdit_GetActiveWindow = function() return active end
-click("OpenChat")
-assert(rawget(entry, "foreverTouchFocusHook") == true and control("Guild").enabled == false)
-IsInGuild = function() return true end
-event(nil, "PLAYER_GUILD_UPDATE")
-assert(control("Guild").enabled)
-local scrolled = false
-entry.chatFrame.ScrollToBottom = function() scrolled = true end
-control("Latest").scripts.OnClick()
-assert(scrolled, "latest must scroll the active chat window")
-entry.scripts.OnEditFocusLost(entry)
 
 -- The optional game frame limit must survive reload, preserve custom settings, and never raise a low limit.
 local vars = {maxFPS = "120", useMaxFPS = "0"}
@@ -937,4 +982,4 @@ assert(frames.ForeverTouchRightAction1.attributes.spell == 258
     and not ForeverTouchPreferences.mobileSlots and reloads == 0)
 assert(select(2, GetActionInfo(1)) == 201, "the desktop action still has its original rank")
 
-print("Passed: arc autosave and recovery, saved switches, spell rank upgrades, cooldowns and charges, item counts, event batching, picker paging, professions, chat docking, whisper alerts and frame limiting.")
+print("Passed: arc autosave and recovery, saved switches, spell rank upgrades, cooldowns and charges, item counts, event batching, picker paging, professions, chat resizing, channel filters, individual whispers and frame limiting.")

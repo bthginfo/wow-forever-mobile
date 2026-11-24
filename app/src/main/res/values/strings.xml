@@ -748,7 +748,9 @@
     <string name="mobile_camera">Camera</string>
     <string name="mobile_camera_sensitivity">Camera sensitivity</string>
     <string name="mobile_reset">Reset</string>
-    <string name="mobile_chat">Write</string>
+    <string name="mobile_chat">Message…</string>
+    <string name="mobile_chat_fullscreen">Full chat</string>
+    <string name="mobile_chat_window">Back to game</string>
     <string name="mobile_chat_send">Send</string>
     <string name="mobile_jump">Jump</string>
     <string name="mobile_diagnostics">Startup and connection</string>

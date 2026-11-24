@@ -1,13 +1,15 @@
 # WoW Forever Mobile
 
-## Android downloads
+## Android downloads · .26
 
 | APK | Devices |
 | --- | --- |
-| [Standard .21 Standalone](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.21/WoW-Forever-Mobile-2.4.4-mobile.21-Standalone.apk) | Snapdragon 8 series with Adreno 7xx or 8xx |
-| [Pixel 9 and 10 · .21-pixel.1](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.21/WoW-Forever-Mobile-2.4.4-mobile.21-Pixel.apk) | Pixel 9 and 10 models listed below |
+| [Standard Android .26](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.26/WoW-Forever-Mobile-2.4.4-mobile.26-Standard.apk) | Snapdragon 8 series with Adreno 7xx or 8xx |
+| [Pixel .26](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.26/WoW-Forever-Mobile-2.4.4-mobile.26-Pixel.apk) | Pixel 9 and 10 families and the original Pixel Fold (2023) |
 
-**Android 10+ · ARM64** · [GitHub release](https://github.com/bthginfo/wow-forever-mobile/releases/tag/v2.4.4-mobile.21)
+**Android 10+ · ARM64** · [.26 release](https://github.com/bthginfo/wow-forever-mobile/releases/tag/v2.4.4-mobile.26)
+
+**Coming from .24?** The new signing certificate requires a one-time reinstall. Follow the steps below to reuse your existing WoW folder.
 
 An Android launcher and touch interface for Blizzard’s Windows ARM64 WoW Forever client. The launcher runs the client on the phone using Wine/Proton. It includes a browser-based Battle.net login, Android keyboard and clipboard controls, and a configurable in-game touch HUD.
 
@@ -25,7 +27,7 @@ This is an unofficial launcher for players with access to WoW Forever through th
 
 ## Requirements
 
-- A 64-bit device that matches one of the two APKs above. The runtime is designed for Android 10 and later.
+- A 64-bit device supported by your chosen APK. The runtime is designed for Android 10 and later.
 - Several GB of free internal space for the app and its Wine environment. The game folder can grow past 50 GB as it caches more data.
 - A Battle.net account with access to WoW Forever. Install the Battle.net Android app if you use its Authenticator.
 - Wi-Fi for the first download. A computer is optional for players who already have game files to copy.
@@ -54,20 +56,23 @@ The launcher downloads the matching `_forever_/Wow-ARM64.exe` from Blizzard when
 
 ### Update an existing installation
 
-Install the .21 APK directly over the matching .19 or .20 edition. When moving from .18 or an earlier test build, Android requires a fresh installation because those editions use different signing keys. Keep your WoW folder and `_forever_/WTF` in shared storage, then select that folder with **Find existing game files**. [Previous .20 release](https://github.com/bthginfo/wow-forever-mobile/releases/tag/v2.4.4-mobile.20)
+If you already have .25, install the matching .26 APK as an update.
 
-### Pixel 9 and 10
+When moving from .24 or an earlier Preview with the same app ID, back up `_forever_/WTF` in your WoW folder and keep the game folder. Uninstall the old launcher and install the matching .26 APK. Open **Find existing game files** and select that folder. You will set your launcher preferences again.
 
-Use the **Pixel 9 and 10** APK for these models. The app selects the Android Vulkan driver for each family through the GameNative wrapper.
+### Pixel graphics profiles
+
+Use the **Pixel** APK for these models. The app selects the Android Vulkan driver for each family through the GameNative wrapper.
 
 | Model | Graphics driver |
 | --- | --- |
 | Pixel 9, 9 Pro, 9 Pro XL and 9 Pro Fold | Mali system Vulkan |
+| Pixel Fold (2023) | Mali system Vulkan. Physical-device launch pending |
 | Pixel 10, 10 Pro, 10 Pro XL and 10 Pro Fold | PowerVR system Vulkan |
 
 A player confirmed the game starts on **Pixel 9 Pro XL with Android 17** using .16-pixel.5. Pixel 10 support is experimental and still needs an on-device game test.
 
-The APK appears as **WoW Forever Mobile Pixel Test** and can be installed alongside the standard app. Close the other launcher before starting WoW from the same folder.
+The APK appears as **WoW Forever Mobile Pixel** and can be installed alongside the standard app. Close the other launcher before starting WoW from the same folder.
 
 The Pixel build checks Direct3D 11 before opening Battle.net sign-in. If the graphics check fails, open **Startup and connection** and tap **Copy** to share the selected graphics profile, error code and available DXVK messages.
 
@@ -79,7 +84,7 @@ The Pixel build checks Direct3D 11 before opening Battle.net sign-in. If the gra
 | Right camera area | Drag to turn the camera |
 | Jump | Right-side shortcut |
 | Target, Interact | Right-side shortcuts on phones and left-side shortcuts in the tablet layout |
-| Write | Opens chat with the Android keyboard. The chat toolbar includes Paste and Send. |
+| Chat / Write | Opens chat with the Android keyboard. The chat toolbar includes Paste and Send. |
 | Bags, Map, Character | Opens the corresponding WoW panel |
 | Talents, Quests, Spellbook | Opens the corresponding WoW panel |
 | Toolbar arrow | Minimizes the toolbar to one button. Tap it to show the shortcuts again. |
@@ -93,31 +98,25 @@ The Pixel build checks Direct3D 11 before opening Battle.net sign-in. If the gra
 
 The touch overlay translates Android gestures into keyboard and mouse input for the game window. Forever Touch reads populated action slots and keeps a per-character mobile layout in its own add-on saved variables. Use **Edit skills** to set up the mobile spell and item buttons.
 
-### Update the .23 preview to .24
-
-Install the matching .24 APK over .23 Preview to keep your launcher and game settings. Use **Pixel Preview** for Pixel 9 and 10 or **Standalone Preview** for supported Adreno devices. The preview can also be installed alongside .21. On a fresh preview installation, use **Find existing game files** to select the existing WoW folder.
-
-## Mobile HUD in the preview
-
-**Write** opens the keyboard for game chat. **Latest** jumps to the most recent line. **Character** and **Professions** have direct toolbar buttons. **Social** opens Friends, Guild and Group Finder. Swipe the toolbar horizontally on narrow screens.
-
-When a charge is still available, the recharge sweep stays light. Spent charges and empty consumables dim, and an item stack shows its last unit. In the skill editor, replacing a spell or item reopens its list on the page containing the current binding. **Applied** confirms an edit has reached your character profile in memory. **Done** requests one interface reload to write it to disk. Leaving the app also closes the skill editor and requests that save. Combat can postpone the write. WoW must get time to complete the reload or log out normally.
-
-The **30 FPS limit / restore** command in **More controls** limits foreground rendering. Tap it again to restore the previous game setting. A lower active limit is respected.
-
-## Skill arc sets
+### Skill arc sets
 
 Open **More controls → Edit skills → Add set**. Each set has its own left and right arc for spells and usable items. Tap **+** on an arc to add a slot and use **‹** and **›** to edit the other sets. With two or more sets, the **Set 1 / 2** button at the bottom of the HUD cycles through them during play. Your existing arc layout becomes **Set 1**. Sets are saved per character.
 
 Starting with .18, spell and item icons show a circular cooldown sweep and the remaining time. Brief cooldowns under two seconds show the sweep alone. Spells with charges show the time until the next charge while recharging.
 
-Forever Touch checks the spellbook when you log in and when you learn spells. It upgrades existing arc slots in every set to the highest learned rank of that spell. An upgrade during combat takes effect after combat.
+Forever Touch checks the spellbook when you log in and when you learn spells. It upgrades existing arc slots in all sets to the highest learned rank of that spell. An upgrade during combat takes effect after combat.
 
 Arc edits apply as soon as you make them. Tap **Done** or use Android Back to close the editor. WoW writes the changes together with one short interface reload and displays **Arc layout saved** after loading them again. During combat, the reload waits until combat ends. A normal WoW logout also writes completed edits from an open editor. **Discard** restores the layout you started editing.
 
 To bind a learned entry such as Smelting or Fishing, open **More controls → Edit skills**, tap **+** and choose **Professions** in the slot picker.
 
-The **Chat** button sits directly to the left of the minimap. Tap it to show or hide the chat. A red dot on the collapsed button signals an incoming whisper. Open the chat to clear it. Use **Write** in the toolbar to bring up the keyboard.
+In .24, the **Chat** button sits directly to the left of the minimap. Tap it to show or hide the chat. A red dot on the collapsed button signals an incoming whisper. Open the chat to clear it. Use **Write** in the toolbar to bring up the keyboard.
+
+### Chat in the .27 source
+
+Tap **Chat** beside the minimap to show or hide the translucent window. Drag the lower-left corner to resize it, or tap that corner to step through three sizes. The size is saved per character.
+
+**Message…** in the mobile toolbar opens the system keyboard. **Full chat** opens the conversation view with filters for all messages, whispers, party, raid and guild. Select a contact to open their conversation and reply there. The red dot signals an unread whisper. The new view shows messages from the current session.
 
 ### Tablets and fullscreen
 
@@ -140,7 +139,7 @@ Fullscreen is on by default. Open **More controls** in the game toolbar to enter
 
 ## Build from source
 
-The [source for both .21 APKs](https://github.com/bthginfo/wow-forever-mobile/tree/android-pixel-vulkan) is on `android-pixel-vulkan`. Run `lua tools/test_forever_touch_profiles.lua` to check arc sets, autosave, cooldowns, profession bindings, game panel shortcuts, and chat placement with simulated WoW events.
+The [source for both .26 APKs](https://github.com/bthginfo/wow-forever-mobile/tree/v2.4.4-mobile.26) has its own build instructions and Forever Touch tests.
 
 Use JDK 17, Android SDK Platform 36, build-tools 35.0.0, and NDK 27.3.13750724. Point `local.properties` at your Android SDK. For a fresh checkout, build the ARM64 Wine login helper into `app/src/main/assets/wow-session-bridge.exe`. [Helper build and test instructions](tools/wow-session-bridge/README.md)
 
@@ -153,11 +152,6 @@ python3 tools/trim_proton_i386.py app/src/main/assets/bundled_components/proton-
 The APK is written to `app/build/outputs/apk/modern/release/`. The runtime download script verifies each component against `tools/components.sha256`.
 
 A local release signing configuration can be provided in `app/keystores/keystore.properties`. Keep keystores and passwords outside version control. The default Gradle build uses application ID `app.wowforever.mobile.browser`.
-
-Pass `-PforeverStandalone=true` to Gradle to build the separately installable test variant with application ID `app.wowforever.mobile.standalone`.
-
-Pass `-PforeverPixelVulkanTest=true` to build the Pixel 9 and 10 APK with application ID `app.wowforever.mobile.pixeltest`.
-Before running Gradle for this variant, run `bash tools/dxvk-powervr/build.sh /path/to/dxvk /path/to/llvm-mingw/bin` with a DXVK v2.4.1 checkout and its submodules. The patch adapts the RGBA8 storage view fallback from [GameNative DXVK](https://github.com/GameNative/dxvk/compare/v2.7.1...gn-2.7.1-gn3).
 
 ---
 

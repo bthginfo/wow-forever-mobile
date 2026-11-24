@@ -684,7 +684,9 @@
     <string name="mobile_camera">Kamera</string>
     <string name="mobile_camera_sensitivity">Kameraempfindlichkeit</string>
     <string name="mobile_reset">Zurücksetzen</string>
-    <string name="mobile_chat">Schreiben</string>
+    <string name="mobile_chat">Nachricht…</string>
+    <string name="mobile_chat_fullscreen">Chat-Vollbild</string>
+    <string name="mobile_chat_window">Zurück zum Spiel</string>
     <string name="mobile_chat_send">Senden</string>
     <string name="mobile_jump">Sprung</string>
     <string name="mobile_diagnostics">Start und Verbindung</string>

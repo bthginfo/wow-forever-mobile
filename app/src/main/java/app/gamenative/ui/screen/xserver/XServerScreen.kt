@@ -1427,6 +1427,11 @@ internal fun XServerScreen(
             return@gameBack
         }
 
+        if (mobileControls.chatFullscreen) {
+            mobileControls.setChatFullscreen(false)
+            return@gameBack
+        }
+
         if (mobileControls.hudEditor != null) {
             mobileControls.closeHudEditor()
             return@gameBack

@@ -13,10 +13,11 @@ internal fun installMobileAddon(context: Context, gameRoot: File) {
 
     val language = AppLanguage.fromTag(context.resources.configuration.locales[0].language) ?: AppLanguage.ENGLISH
     val manifest = context.assets.open("ForeverTouch/ForeverTouch.toc").bufferedReader().use { toc ->
-        "## X-ForeverTouch-Language: ${language.tag}\n${toc.readText()}".toByteArray()
+        "## X-ForeverTouch-Language: ${language.tag}\n## X-ForeverTouch-Keyboard: native\n${toc.readText()}".toByteArray()
     }
     val scripts = listOf(
-        "ForeverTouchActions.lua", "ForeverTouchPicker.lua", "ForeverTouchChat.lua", "ForeverTouchMobileLayout.lua",
+        "ForeverTouchActions.lua", "ForeverTouchPicker.lua", "ForeverTouchChatHistory.lua",
+        "ForeverTouchChat.lua", "ForeverTouchMobileLayout.lua",
     ).map { name ->
         name to context.assets.open("ForeverTouch/$name").use { it.readBytes() }
     }

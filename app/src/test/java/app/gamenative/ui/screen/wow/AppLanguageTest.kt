@@ -45,6 +45,8 @@ class AppLanguageTest {
                 assertTrue(toc.startsWith("## X-ForeverTouch-Language: ${language.tag}\n"))
                 assertEquals(toc, addon.resolve("ForeverTouch_Camelot.toc").readText())
                 assertTrue("## SavedVariablesPerCharacter: ForeverTouchPreferences" in toc)
+                assertTrue("## X-ForeverTouch-Keyboard: native" in toc)
+                assertTrue("ForeverTouchChatHistory.lua" in toc && addon.resolve("ForeverTouchChatHistory.lua").isFile)
             }
         } finally {
             Locale.setDefault(previous)
