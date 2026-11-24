@@ -73,7 +73,7 @@ internal class MobileTouchControls(private val touchSlop: Float) {
     fun useLoginControls() {
         if (!playing) return
         if (chatting) closeChat()
-        setChatFullscreen(false)
+        showChatFullscreen(false)
         closeHudEditor()
         releaseAll()
         touchpad?.cancelTouchInput()
@@ -93,7 +93,7 @@ internal class MobileTouchControls(private val touchSlop: Float) {
         tap(if (send) XKeycode.KEY_ENTER else XKeycode.KEY_ESC)
     }
 
-    fun setChatFullscreen(active: Boolean) {
+    fun showChatFullscreen(active: Boolean) {
         if (chatFullscreen == active || !playing || chatting || hudEditor != null) return
         releaseAll()
         touchpad?.cancelTouchInput()

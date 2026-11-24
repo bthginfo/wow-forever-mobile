@@ -93,7 +93,7 @@ internal fun BoxScope.MobileGameOverlay(
                 controls.closeChat()
                 receiver.hideKeyboard()
             }
-            controls.setChatFullscreen(false)
+            controls.showChatFullscreen(false)
             controls.closeHudEditor()
             controls.releaseAll()
         }
@@ -202,7 +202,7 @@ internal fun BoxScope.MobileGameOverlay(
                 if (compactToolbar) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         ToolbarText(R.string.mobile_chat, Icons.Filled.ChatBubbleOutline, field = true, onClick = ::composeMessage)
-                        ToolbarText(R.string.mobile_chat_fullscreen) { controls.setChatFullscreen(true) }
+                        ToolbarText(R.string.mobile_chat_fullscreen) { controls.showChatFullscreen(true) }
                         IconButton(onClick = { setToolbarMinimized(false) }, modifier = Modifier.size(48.dp)) {
                             Icon(Icons.Filled.KeyboardArrowDown, stringResource(R.string.mobile_expand_toolbar), tint = overlayAccent)
                         }
@@ -222,7 +222,7 @@ internal fun BoxScope.MobileGameOverlay(
                         ToolbarText(R.string.mobile_chat_send, accent = true) { finishChat(send = true) }
                         ToolbarText(android.R.string.cancel) { finishChat(send = false) }
                     } else if (chatFullscreen) {
-                        ToolbarText(R.string.mobile_chat_window) { controls.setChatFullscreen(false) }
+                        ToolbarText(R.string.mobile_chat_window) { controls.showChatFullscreen(false) }
                         ToolbarText(R.string.mobile_chat, Icons.Filled.ChatBubbleOutline, field = true, onClick = ::composeMessage)
                     } else if (playing) {
                         Row(
@@ -231,7 +231,7 @@ internal fun BoxScope.MobileGameOverlay(
                         ) {
                             ToolbarText(R.string.mobile_chat, Icons.Filled.ChatBubbleOutline, field = true,
                                 enabled = !editingControls, onClick = ::composeMessage)
-                            ToolbarText(R.string.mobile_chat_fullscreen, enabled = !editingControls) { controls.setChatFullscreen(true) }
+                            ToolbarText(R.string.mobile_chat_fullscreen, enabled = !editingControls) { controls.showChatFullscreen(true) }
                             ToolbarText(R.string.mobile_character, enabled = !editingControls) { controls.tap(XKeycode.KEY_F3, modified = true) }
                             Box {
                                 ToolbarText(R.string.mobile_social, enabled = !editingControls) { showSocial = true }

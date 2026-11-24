@@ -1428,7 +1428,7 @@ internal fun XServerScreen(
         }
 
         if (mobileControls.chatFullscreen) {
-            mobileControls.setChatFullscreen(false)
+            mobileControls.showChatFullscreen(false)
             return@gameBack
         }
 
