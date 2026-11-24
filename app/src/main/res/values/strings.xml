@@ -712,7 +712,10 @@
     <string name="mobile_arrange_skills">Edit skills</string>
     <string name="mobile_edit_layout">Edit controls</string>
     <string name="mobile_edit_layout_hint">Drag a control or the menu bar to move it.</string>
-    <string name="mobile_edit_skills_hint">Select a slot to assign it. Changes save automatically.</string>
+    <string name="mobile_edit_skills_hint">Select a slot to assign it. Tap Done to save.</string>
+    <string name="mobile_arc_saving">Saving arc layout…</string>
+    <string name="mobile_arc_saved">Arc layout saved.</string>
+    <string name="mobile_arc_save_failed">Couldn’t save the arc layout. Tap Done to try again.</string>
     <string name="mobile_layout_default">Default</string>
     <string name="mobile_layout_save">Save</string>
     <string name="mobile_layout_done">Done</string>

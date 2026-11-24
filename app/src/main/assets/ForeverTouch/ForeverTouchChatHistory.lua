@@ -66,6 +66,22 @@ function history.reset()
     history.contacts = {}
     history.peers = {}
     history.restrictedUnread = false
+    history.nativeSource = false
+    history.restrictedNativeLine = false
+end
+
+function history.addNative(body, r, g, b)
+    if isSecret(body) then
+        history.restrictedNativeLine = true
+        return
+    end
+    if not readable(body) then return end
+    local function color(value, fallback)
+        return not isSecret(value) and type(value) == "number" and value or fallback
+    end
+    local line = { text = body, time = date("%H:%M"), nativeColors = {color(r, .89), color(g, .93), color(b, .96)} }
+    append(history.lines.ALL, line, 180)
+    return line
 end
 
 function history.add(event, body, sender, _, channel, _, _, _, _, channelName, _, _, _, accountID)
@@ -83,7 +99,7 @@ function history.add(event, body, sender, _, channel, _, _, _, _, channelName, _
         text = body, author = sender, kind = kind, outgoing = outgoing,
         channel = readable(channel) or readable(channelName), time = date("%H:%M"),
     }
-    append(history.lines.ALL, line, 180)
+    if not history.nativeSource then append(history.lines.ALL, line, 180) end
     if whisper then
         local bnetID = kind == "BN_WHISPER" and not isSecret(accountID)
             and type(accountID) == "number" and accountID > 0 and accountID or nil

@@ -1,6 +1,7 @@
 local _, addon = ...
 local Actions = addon.actions
 local Chat = addon.chat
+local ArcSave = addon.arcSave
 local SIDES = Actions.sides
 local DESIGN_HEIGHT = 720
 local ICON_SIZE = 62
@@ -35,12 +36,12 @@ for _, side in ipairs(SIDES) do
 end
 
 local livePages, defaults, desktopKeys, desktopRecords, preferences
-local profileKey, alternateProfileKey, confirmSaved
+local profileKey, alternateProfileKey, confirmSaved, retainedAfterReload
 local actionPages = {}
 local draft, selected, dragFrom, moving
 local refreshSlots, refreshLiveButtons, updateEditor
 local pendingRefresh, refreshQueued = false, false
-local pendingSave, saveQueued = false, false
+local pendingSave, reloadRequested = false, false
 local staleSetBindings = false
 local spellRanks, spellRanksDirty = nil, true
 
@@ -61,6 +62,13 @@ switcher:SetAttribute("_onclick", [[
     self:GetFrameRef("page" .. nextPage):Show()
     self:SetAttribute("page", nextPage)
 ]])
+
+local saveRetry = CreateFrame("Button", "ForeverTouchRetrySave", UIParent, "UIPanelButtonTemplate")
+saveRetry:SetFrameStrata("HIGH")
+saveRetry:SetPoint("BOTTOM", UIParent, "BOTTOM", 139, 20)
+saveRetry:SetSize(128, 32)
+saveRetry:SetText(german and "Arc speichern" or "Save arcs")
+saveRetry:Hide()
 
 local function setLabel(index, count)
     return string.format("Set %d / %d", index, count)
@@ -106,9 +114,54 @@ local function readableName(value)
     if not isSecret(value) and type(value) == "string" and value ~= "" then return value end
 end
 
-local function loadPreferences()
-    if type(ForeverTouchProfiles) ~= "table" then ForeverTouchProfiles = {} end
-    local profiles = ForeverTouchProfiles
+-- The Forever client can write SavedVariables but skip loading them during a
+-- UI reload. An in-memory CVar carries the current profile across that reload.
+-- For a fresh game process the Android launcher supplies the files from disk.
+local SESSION_PROFILE = "foreverTouchSessionProfile"
+local SESSION_CHUNK = 220
+local MAX_SESSION_CHUNKS = 128
+
+local function readSessionProfile(guid, nameKey)
+    if not C_CVar or not C_EncodingUtil then return end
+    local ok, state = pcall(function()
+        local count = tonumber(C_CVar.GetCVar(SESSION_PROFILE .. "Count"))
+        if not count or count % 1 ~= 0 or count < 1 or count > MAX_SESSION_CHUNKS then return end
+        local parts = {}
+        for index = 1, count do
+            local part = C_CVar.GetCVar(SESSION_PROFILE .. index)
+            if not part or part == "" then return end
+            parts[index] = part
+        end
+        return C_EncodingUtil.DeserializeCBOR(C_EncodingUtil.DecodeBase64(table.concat(parts)))
+    end)
+    if ok and type(state) == "table" and (
+        (guid and state.guid == guid) or (nameKey and (state.nameKey == nameKey or state.guid == nameKey))
+    ) and type(state.profile) == "table" then return state.profile end
+end
+
+local function keepProfileForReload()
+    if not profileKey or not C_CVar or not C_EncodingUtil then return end
+    pcall(function()
+        local function write(name, value)
+            if C_CVar.GetCVar(name) == nil then C_CVar.RegisterCVar(name, value) end
+            C_CVar.SetCVar(name, value)
+            return C_CVar.GetCVar(name) == value
+        end
+        local data = C_EncodingUtil.EncodeBase64(C_EncodingUtil.SerializeCBOR({
+            guid = profileKey, nameKey = alternateProfileKey, profile = preferences,
+        }))
+        local count = math.ceil(#data / SESSION_CHUNK)
+        local counter = SESSION_PROFILE .. "Count"
+        if count < 1 or count > MAX_SESSION_CHUNKS or not write(counter, "0") then return end
+        for index = 1, count do
+            local start = (index - 1) * SESSION_CHUNK + 1
+            if not write(SESSION_PROFILE .. index, data:sub(start, start + SESSION_CHUNK - 1)) then return end
+        end
+        write(counter, tostring(count))
+    end)
+end
+
+local function characterProfileKeys()
     local guid = readableName(UnitGUID("player"))
     local name, realm
     if UnitFullName then name, realm = UnitFullName("player") end
@@ -116,19 +169,46 @@ local function loadPreferences()
     if not realm and GetNormalizedRealmName then realm = readableName(GetNormalizedRealmName()) end
     local region = GetCurrentRegion and GetCurrentRegion()
     if isSecret(region) or type(region) ~= "number" then region = 0 end
-    local nameKey = name and realm and ("character:" .. region .. "/" .. realm:gsub("%s+", ""):lower() .. "/" .. name:lower())
+    local realmName = realm and realm:gsub("%s+", ""):lower()
+    local charName = name and name:lower()
+    local nameKey = charName and realmName and ("character:" .. region .. "/" .. realmName .. "/" .. charName)
+    return guid, nameKey, realmName, charName
+end
 
-    local primary = ForeverTouchPreferences
-    local byGUID, byName = guid and profiles[guid], nameKey and profiles[nameKey]
-    if preferenceRevision(byGUID) > preferenceRevision(primary) then primary = byGUID end
-    if preferenceRevision(byName) > preferenceRevision(primary) then primary = byName end
+local function loadPreferences()
+    if type(ForeverTouchProfiles) ~= "table" then ForeverTouchProfiles = {} end
+    local profiles = ForeverTouchProfiles
+    local guid, nameKey, realmName, charName = characterProfileKeys()
+
+    local primary, arcs = ForeverTouchPreferences, ForeverTouchPreferences
+    local function consider(profile)
+        if preferenceRevision(profile) > preferenceRevision(primary) then primary = profile end
+        if arcRevision(profile) > arcRevision(arcs) then arcs = profile end
+    end
+    consider(guid and profiles[guid])
+    consider(nameKey and profiles[nameKey])
+    local recovered = addon.recoveredProfiles
+    if recovered then
+        consider(guid and recovered.profiles[guid])
+        consider(nameKey and recovered.profiles[nameKey])
+        if charName then
+            local id = GetRealmID and GetRealmID()
+            if isSecret(id) or type(id) ~= "number" then id = guid and guid:match("^Player%-(%d+)%-") end
+            local function considerPath(directory)
+                if not directory then return end
+                consider(recovered.characters[directory .. "/" .. charName])
+                if realmName then consider(recovered.characters[directory .. "/" .. charName .. "-" .. realmName]) end
+            end
+            considerPath(id and tostring(id))
+            considerPath(realmName)
+        end
+    end
+    local session = readSessionProfile(guid, nameKey)
+    consider(session)
+
     -- Keep the legacy GUID lookup and a name fallback for clients that withhold the GUID.
     profileKey, alternateProfileKey = guid or nameKey, guid and nameKey
     preferences = type(primary) == "table" and CopyTable(primary) or {}
-    local arcs = primary
-    if arcRevision(ForeverTouchPreferences) > arcRevision(arcs) then arcs = ForeverTouchPreferences end
-    if arcRevision(byGUID) > arcRevision(arcs) then arcs = byGUID end
-    if arcRevision(byName) > arcRevision(arcs) then arcs = byName end
     -- A newer chat setting can be saved while an older backup still holds the last arc edits.
     if arcs ~= primary then
         for _, field in ipairs(arcFields) do
@@ -137,7 +217,8 @@ local function loadPreferences()
         end
         preferences.arcRevision = arcRevision(arcs)
     end
-    confirmSaved = preferences.confirmArcSave
+    retainedAfterReload = preferences.confirmArcSave and session ~= nil and (primary == session or arcs == session)
+    confirmSaved = preferences.confirmArcSave and not retainedAfterReload
     preferences.confirmArcSave = nil
     ForeverTouchPreferences = preferences
 end
@@ -160,20 +241,35 @@ local function requestReload(reload)
 end
 
 local function flushSave()
-    if not pendingSave or saveQueued or draft or InCombatLockdown() then return end
-    saveQueued = true
-    C_Timer.After(0, function()
-        saveQueued = false
-        if not pendingSave or draft or InCombatLockdown() then return end
-        checkpointPreferences()
-        local reload = C_UI and C_UI.Reload
-        if requestReload(reload) or (ReloadUI ~= reload and requestReload(ReloadUI)) then
-            pendingSave = false
-        else
-            saveFeedback(german and "Arc-Belegung wird beim Ausloggen gespeichert." or "Arc layout will save when you log out.")
+    if not pendingSave or reloadRequested or draft or InCombatLockdown() then return end
+    saveRetry:Hide()
+    checkpointPreferences()
+    keepProfileForReload()
+
+    -- The game requires the input event that triggered this save. A timer or
+    -- PLAYER_REGEN_ENABLED can show the retry button but cannot reload the UI.
+    local function reloadDidNotStart()
+        reloadRequested = false
+        if draft or InCombatLockdown() then return end
+        saveRetry:Show()
+        saveFeedback(german and "Arc noch offen. Erneut speichern oder im Spiel ausloggen."
+            or "Arc changes pending. Try saving again or log out in game.")
+    end
+
+    reloadRequested = true
+    local reload = C_UI and C_UI.Reload
+    if requestReload(reload) or (ReloadUI ~= reload and requestReload(ReloadUI)) then
+        if reloadRequested then
+            C_Timer.After(2, function()
+                if reloadRequested then reloadDidNotStart() end
+            end)
         end
-    end)
+    else
+        reloadDidNotStart()
+    end
 end
+
+saveRetry:SetScript("OnClick", flushSave)
 
 local function makeSkillArt(button)
     button.rim = button:CreateTexture(nil, "BACKGROUND")
@@ -624,6 +720,7 @@ end
 
 local function openEditor()
     if draft or not livePages then return end
+    saveRetry:Hide()
     local pages = savedPages()
     draft = {
         pages = pages,
@@ -652,7 +749,10 @@ local function resetEditor()
 end
 
 local function finishEditing(keepChanges)
-    if not draft then return end
+    if not draft then
+        if keepChanges then flushSave() end
+        return
+    end
     stopMoving()
     if keepChanges then
         local selectedSet = draft.index > 1 and draft.index or nil
@@ -665,12 +765,40 @@ local function finishEditing(keepChanges)
     draft, selected, dragFrom = nil, nil, nil
     editShield:Hide()
     setActionAlpha(1)
-    if pendingSave and InCombatLockdown() then
-        saveFeedback(german and "Arc-Belegung wird nach dem Kampf gespeichert." or "Arc layout will save after combat.")
-    end
-    -- Completed edits are already checkpointed. Reload once when the editor closes.
-    flushSave()
     refreshSlots()
+    if keepChanges then
+        if pendingSave and InCombatLockdown() then
+            saveFeedback(german and "Tippe nach dem Kampf auf Arc speichern." or "Tap Save arcs after combat.")
+        else
+            flushSave()
+        end
+    elseif pendingSave and preferences.confirmArcSave and not InCombatLockdown() and not reloadRequested then
+        saveRetry:Show()
+    end
+end
+
+local function saveFromToolbar()
+    if not ArcSave then
+        finishEditing(true)
+        return
+    end
+    if not draft then return end
+    if not profileKey then
+        local guid, nameKey = characterProfileKeys()
+        profileKey, alternateProfileKey = guid or nameKey, guid and nameKey
+    end
+    local selectedSet = draft.index > 1 and draft.index or nil
+    if selectedSet ~= preferences.mobileArcPage then checkpointDraft() end
+    ArcSave.show(profileKey, alternateProfileKey, preferences)
+end
+
+local function acceptToolbarSave()
+    if not ArcSave or not draft then return end
+    ArcSave.close()
+    pendingSave, preferences.confirmArcSave = false, nil
+    checkpointPreferences()
+    finishEditing(true)
+    keepProfileForReload()
 end
 
 local function clickBinding(name, action)
@@ -730,13 +858,20 @@ local clickBindings = {
     ["CTRL-SHIFT-F8"] = clickBinding("OpenChat", Chat.open),
     ["CTRL-SHIFT-M"] = clickBinding("FullscreenChat", function() Chat.setFullscreen(true) end),
     ["CTRL-SHIFT-C"] = clickBinding("CompactChat", function() Chat.setFullscreen(false) end),
-    ["CTRL-SHIFT-F1"] = clickBinding("SaveEditor", function() finishEditing(true) end),
-    ["CTRL-SHIFT-F2"] = clickBinding("CancelEditor", function() finishEditing(false) end),
+    ["CTRL-SHIFT-F1"] = clickBinding("SaveEditor", saveFromToolbar),
+    ["CTRL-SHIFT-F2"] = clickBinding("CancelEditor", function()
+        if ArcSave then ArcSave.close() end
+        finishEditing(false)
+    end),
     ["CTRL-SHIFT-HOME"] = clickBinding("ResetEditor", resetEditor),
     ["CTRL-SHIFT-PAGEDOWN"] = clickBinding("GroupFinder", function()
         if ToggleGroupFinderFrame then ToggleGroupFinderFrame() end
     end),
 }
+if ArcSave then
+    clickBindings["CTRL-SHIFT-END"] = clickBinding("AcceptArcSave", acceptToolbarSave)
+    clickBindings["CTRL-SHIFT-DELETE"] = clickBinding("CancelArcTransfer", ArcSave.close)
+end
 
 local desktopBarNames = {
     "MainActionBar", "MultiBarBottomLeft", "MultiBarBottomRight", "MultiBarLeft", "MultiBarRight",
@@ -886,7 +1021,9 @@ switcher:HookScript("OnAttributeChanged", function(_, name, index)
     if preferences.mobileArcPage ~= active and not staleSetBindings then
         preferences.mobileArcPage = active
         preferences.revision = preferenceRevision(preferences) + 1
+        preferences.arcRevision = preferences.revision
         checkpointPreferences()
+        pendingSave = true
     end
     switcher:SetText(setLabel(index, #livePages))
     refreshLiveButtons(true, true)
@@ -947,7 +1084,7 @@ end
 
 for _, event in ipairs({
     "GROUP_ROSTER_UPDATE", "PLAYER_GUILD_UPDATE", "PLAYER_LOGIN", "PLAYER_LOGOUT", "PLAYER_ENTERING_WORLD", "ACTIONBAR_SLOT_CHANGED", "ACTIONBAR_PAGE_CHANGED",
-    "DISPLAY_SIZE_CHANGED", "UI_SCALE_CHANGED", "PLAYER_REGEN_ENABLED", "EDIT_MODE_LAYOUTS_UPDATED",
+    "DISPLAY_SIZE_CHANGED", "UI_SCALE_CHANGED", "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED", "EDIT_MODE_LAYOUTS_UPDATED",
     "PLAYER_SPECIALIZATION_CHANGED", "UPDATE_CHAT_WINDOWS", "UPDATE_FLOATING_CHAT_WINDOWS",
     "ACTIONBAR_UPDATE_COOLDOWN", "ACTIONBAR_UPDATE_USABLE", "BAG_UPDATE_DELAYED",
     "SPELLS_CHANGED", "SPELL_TEXT_UPDATE", "UPDATE_BONUS_ACTIONBAR", "UPDATE_OVERRIDE_ACTIONBAR",
@@ -960,13 +1097,20 @@ events:SetScript("OnEvent", function(_, event, spellID)
     if event == "PLAYER_LOGIN" then
         loadHudPreferences()
     elseif event == "PLAYER_LOGOUT" then
+        if ArcSave then ArcSave.close() end
         Chat.suspend()
         checkpointPreferences()
+        if pendingSave and not reloadRequested then keepProfileForReload() end
+        pendingSave, reloadRequested = false, false
+        saveRetry:Hide()
     elseif event == "PLAYER_ENTERING_WORLD" then
-        if not preferences then loadHudPreferences() end
+        if not preferences or (not profileKey and not draft) then loadHudPreferences() end
         if confirmSaved then
             confirmSaved = nil
             saveFeedback(german and "Arc-Belegung gespeichert." or "Arc layout saved.")
+        elseif retainedAfterReload then
+            retainedAfterReload = nil
+            saveFeedback(german and "Arc-Belegung übernommen." or "Arc layout restored after reload.")
         end
         C_Timer.After(0, function()
             if InCombatLockdown() then
@@ -977,8 +1121,10 @@ events:SetScript("OnEvent", function(_, event, spellID)
             C_Timer.After(0, layoutHUD)
             refreshSlots()
         end)
+    elseif event == "PLAYER_REGEN_DISABLED" then
+        saveRetry:Hide()
     elseif event == "PLAYER_REGEN_ENABLED" then
-        flushSave()
+        if pendingSave and preferences.confirmArcSave and not draft and not reloadRequested then saveRetry:Show() end
         installBindings()
         layoutHUD()
         if pendingRefresh then queueRefresh(true) end

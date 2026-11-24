@@ -2,7 +2,7 @@
 local source = (arg and arg[1]) or "app/src/main/assets/ForeverTouch"
 local frames, event, choose, player, combat, reloads, disk
 local playerName, playerRealm, bindings, callbacks, messages
-local secureClick, registered
+local secureClick, hardwareEvent, registered
 
 local function copy(value)
     if type(value) ~= "table" then return value end
@@ -63,6 +63,7 @@ local methods = {
     SetText = function(self, value) self.text = value end,
     SetSwipeColor = function(self, _, _, _, alpha) self.swipeAlpha = alpha end,
     SetVertexColor = function(self, red) self.red = red end,
+    SetColorTexture = function(self, r, g, b) self.rasterColor = math.floor(r * 8 + g * 6 + b + .5) end,
     SetEnabled = function(self, enabled) self.enabled = enabled end,
     SetFrameLevel = function(self, level) self.level = level end,
     SetDrawSwipe = function(self, enabled) self.drawSwipe = enabled end,
@@ -142,9 +143,15 @@ function SaveBindings() error("The HUD must leave WoW's keyboard bindings alone"
 function IsInGroup() return false end
 function IsInRaid() return false end
 function IsInGuild() return false end
-C_Timer = { After = function(_, callback) callback() end }
+C_Timer = { After = function(_, callback)
+    local previous = hardwareEvent
+    hardwareEvent = false
+    callback()
+    hardwareEvent = previous
+end }
 C_UI = {
     Reload = function()
+        if not hardwareEvent then return end -- The WoW client can ignore an unprotected reload.
         reloads = reloads + 1
         event(nil, "PLAYER_LOGOUT")
         disk = { character = copy(ForeverTouchPreferences), account = copy(ForeverTouchProfiles) }
@@ -179,13 +186,29 @@ local function login(guid, characterSaved, accountSaved, options)
     frames, player, combat, reloads, disk = {}, guid, false, 0, nil
     playerName, playerRealm = options.name, options.realm
     bindings, callbacks, messages, registered = {}, {}, {}, {}
-    secureClick, choose = false, nil
+    secureClick, hardwareEvent, choose = false, false, nil
     ForeverTouchPreferences, ForeverTouchProfiles = nil, nil
     UIParent = CreateFrame("Frame", "UIParent")
     UIParent:SetSize(1536, 720)
     DEFAULT_CHAT_FRAME = CreateFrame("Frame", "ChatFrame1", UIParent)
     DEFAULT_CHAT_FRAME:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", 10, 20)
     DEFAULT_CHAT_FRAME:SetSize(430, 180)
+    hooksecurefunc = nil
+    if options.nativeMessages then
+        local nativeMessages = copy(options.nativeMessages)
+        function hooksecurefunc(frame, method, callback)
+            local original = frame[method]
+            frame[method] = function(self, ...)
+                original(self, ...)
+                callback(self, ...)
+            end
+        end
+        function DEFAULT_CHAT_FRAME:AddMessage(...)
+            nativeMessages[#nativeMessages + 1] = {...}
+        end
+        function DEFAULT_CHAT_FRAME:GetNumMessages() return #nativeMessages end
+        function DEFAULT_CHAT_FRAME:GetMessageInfo(index) return table.unpack(nativeMessages[index]) end
+    end
     GENERAL_CHAT_DOCK = CreateFrame("Frame", "GeneralDockManager", UIParent)
     GENERAL_CHAT_DOCK.windows = {DEFAULT_CHAT_FRAME}
     FCFDock_GetChatFrames = function(dock) return dock.windows end
@@ -193,6 +216,7 @@ local function login(guid, characterSaved, accountSaved, options)
     MinimapCluster.left = 1270
     UIErrorsFrame = { AddMessage = function(_, message) messages[#messages + 1] = message end }
     local addon = {
+        recoveredProfiles = options.recoveredProfiles,
         createSlotPicker = function()
             local picker = CreateFrame("Frame")
             picker:Hide()
@@ -210,6 +234,14 @@ local function login(guid, characterSaved, accountSaved, options)
     if options.realPicker then assert(loadfile(source .. "/ForeverTouchPicker.lua"))("ForeverTouch", addon) end
     assert(loadfile(source .. "/ForeverTouchChatHistory.lua"))("ForeverTouch", addon)
     assert(loadfile(source .. "/ForeverTouchChat.lua"))("ForeverTouch", addon)
+    if options.arcSession then
+        local addons = C_AddOns
+        C_AddOns = { GetAddOnMetadata = function(_, key)
+            if key == "X-ForeverTouch-ArcSession" then return options.arcSession end
+        end }
+        assert(loadfile(source .. "/ForeverTouchArcSave.lua"))("ForeverTouch", addon)
+        C_AddOns = addons
+    end
     assert(loadfile(source .. "/ForeverTouchMobileLayout.lua"))("ForeverTouch", addon)
     -- The client loads SavedVariables after running the add-on's Lua chunks.
     ForeverTouchPreferences, ForeverTouchProfiles = copy(characterSaved), copy(accountSaved)
@@ -220,7 +252,9 @@ end
 
 local function click(name)
     local frame = frames["ForeverTouch" .. name]
+    hardwareEvent = true
     frame.scripts.OnClick(frame)
+    hardwareEvent = false
 end
 
 local function control(text)
@@ -322,6 +356,8 @@ assert(reloads == 0 and ForeverTouchPreferences.mobileSlots.right[1].id == 502,
     "reopening during combat uses the autosaved profile while live buttons still show the old slots")
 combat = false
 event(nil, "PLAYER_REGEN_ENABLED")
+assert(reloads == 0 and frames.ForeverTouchRetrySave:IsShown(), "leaving combat is not an input event")
+click("RetrySave")
 assert(reloads == 1 and disk.character.mobileSlots.left[1].id == 503 and disk.character.mobileSlots.right[1].id == 502)
 
 login(first, legacy)
@@ -371,7 +407,9 @@ click("SaveEditor")
 assert(reloads == 0, "saving during combat must skip reloading the client UI")
 combat = false
 event(nil, "PLAYER_REGEN_ENABLED")
-assert(reloads == 1 and disk.character.mobileSlots.left[1].id == 501, "combat saves flush when combat ends")
+assert(reloads == 0 and frames.ForeverTouchRetrySave:IsShown())
+click("RetrySave")
+assert(reloads == 1 and disk.character.mobileSlots.left[1].id == 501, "a tap after combat saves the layout")
 assert(frames.ForeverTouchLeftAction1.attributes.item == "item:501")
 
 login(first, primary, nil)
@@ -563,11 +601,12 @@ end
 assert(found, "the profession picker offers a bindable Smelting button")
 combat = true
 click("SaveEditor")
-assert(messages[1] == "Arc layout will save after combat." and reloads == 0)
+assert(messages[1] == "Tap Save arcs after combat." and reloads == 0)
 event(nil, "PLAYER_ENTERING_WORLD")
 assert(#messages == 1, "changing zones is not confirmation of a pending save")
 combat = false
 event(nil, "PLAYER_REGEN_ENABLED")
+click("RetrySave")
 assert(reloads == 1 and disk.character.mobileSlots.left[1].id == 301)
 local account = disk.account
 local key = "character:0/silvermoon/miner"
@@ -754,6 +793,25 @@ assert(#restored.chatHistory.contacts == 32, "the in-memory inbox is bounded")
 for index = 1, 200 do restored.chat.onMessage("CHAT_MSG_GUILD", "Hello " .. index, "GuildFriend") end
 assert(#restored.chatHistory.lines.GUILD == 100 and #restored.chatHistory.lines.ALL == 180)
 
+-- General mirrors the messages the native chat really shows, including text
+-- written even when there is no CHAT_MSG event for the line.
+local mirrored = login(first, {mobileChatOpen = true}, nil, {nativeMessages = {{"Joined [1. General]", .8, .6, .4}}})
+local general = frames.ForeverTouchChatTranscript
+assert(general.lines[1] == "Joined [1. General]", "channel membership must appear on the initial render")
+local loot = "You receive loot: |cffffffff|Hitem:501|h[Practice Stone]|h|r."
+DEFAULT_CHAT_FRAME:AddMessage(loot, .1, .8, .2)
+mirrored.chat.onMessage("CHAT_MSG_LOOT", loot)
+DEFAULT_CHAT_FRAME:AddMessage("You gain 30 experience.", .5, .5, 1)
+assert(#general.lines == 3 and general.lines[2] == loot and general.lines[3] == "You gain 30 experience.",
+    "loot, item links and system lines use the actual native transcript without duplicated events")
+mirrored.chat.onMessage("CHAT_MSG_WHISPER", "hello", "Pat")
+DEFAULT_CHAT_FRAME:AddMessage("[Pat] whispers: hello", 1, .4, 1)
+assert(#general.lines == 4 and mirrored.chatHistory.contacts[1].name == "Pat")
+mirrored.chat.setFullscreen(true)
+assert(general.lines[2] == loot and #general.lines == 4, "the same native lines must be available in full chat")
+DEFAULT_CHAT_FRAME:AddMessage(secret)
+assert(#general.lines == 4 and frames.ForeverTouchChatStock:IsShown(), "restricted messages stay accessible in native chat")
+
 -- A secure set switch must be recoverable from the account snapshot during play.
 local twoSets = { revision = 8, mobileSlots = legacy.mobileSlots,
     mobileArcPages = {{ slots = { left = {}, right = {{ kind = "item", id = 501 }} } }} }
@@ -766,6 +824,13 @@ assert(ForeverTouchProfiles[first] and ForeverTouchProfiles[first].mobileArcPage
 local accountAfterSwitch = copy(ForeverTouchProfiles)
 login(first, twoSets, accountAfterSwitch)
 assert(frames.ForeverTouchCycleSet:GetAttribute("page") == 2, "stale character file overrode the selected set")
+cycleSet()
+assert(reloads == 0, "switching sets during play must not reload the game UI")
+click("SaveEditor") -- Also sent when the app goes to the background.
+assert(reloads == 1 and disk.character.mobileArcPage == nil, "background save persists the latest active set")
+local backgroundSave = disk
+login(first, backgroundSave.character, backgroundSave.account)
+assert(frames.ForeverTouchCycleSet:GetAttribute("page") == 1)
 
 -- WoW may deliver these notifications together before the next rendered frame.
 local addon = login(first, twoSets)
@@ -783,22 +848,81 @@ timers[1]()
 assert(visits == 1, "one visible button should be updated once for a seven-event burst")
 C_Timer.After = immediate
 
--- During an open edit session an incoming save cannot reload over the user's next edit.
+-- A phone can close immediately after Done, before any queued timers run.
 login(first, legacy)
 timers = {}
 C_Timer.After = function(_, run) timers[#timers + 1] = run end
 click("OpenEditor")
-replaceRight({kind = "item", id = 501})
-click("SaveEditor")
-click("OpenEditor")
-for _, run in ipairs(timers) do run() end
-assert(reloads == 0)
 replaceRight({kind = "spell", id = 202})
 click("SaveEditor")
-local finish = timers[#timers]
-finish()
-assert(reloads == 1 and disk.character.mobileSlots.right[1].id == 202)
+assert(reloads == 1 and disk.character.mobileSlots.right[1].id == 202, "Done must write before the game leaves the input handler")
+local restartSave = disk
 C_Timer.After = immediate
+login(first, restartSave.character, restartSave.account)
+assert(frames.ForeverTouchRightAction1.attributes.spell == 202 and messages[1] == "Arc layout saved.")
+
+-- A reload can fail silently. Keep the edit pending and confirm only from the reloaded profile.
+login(first, legacy)
+local realReload = C_UI.Reload
+C_UI.Reload = function() end
+click("OpenEditor")
+replaceRight({kind = "spell", id = 202})
+click("SaveEditor")
+assert(reloads == 0 and not disk and frames.ForeverTouchRetrySave:IsShown())
+assert(messages[1] == "Arc changes pending. Try saving again or log out in game.")
+C_UI.Reload = realReload
+click("RetrySave")
+assert(reloads == 1 and disk.character.mobileSlots.right[1].id == 202)
+
+-- The Forever client can leave both SavedVariables globals nil in a fresh game
+-- process, despite having written the real account and character files to disk.
+local recoveredArc = {revision = 18, arcRevision = 17,
+    mobileSlots = {left = {{kind = "item", id = 501}}, right = {}},
+    mobileArcPage = 2, mobileArcPositions = {left = {x = .18, y = .42}},
+    mobileArcPages = {
+        {slots = {left = {{kind = "item", id = 502}}, right = {}}},
+        {slots = {left = {{kind = "item", id = 503}}, right = {}}},
+    },
+}
+local restoredId = "Player-70-AB"
+local receipt = {profiles = {[restoredId] = recoveredArc}, characters = {}}
+login(restoredId, nil, nil, {recoveredProfiles = receipt})
+assert(frames.ForeverTouchCycleSet.text == "Set 2 / 3" and ForeverTouchPreferences.mobileArcPositions.left.x == .18)
+assert(frames.ForeverTouchLeftAction1.attributes.item == "item:501"
+    and frames.ForeverTouchLeftSet2Action1.attributes.item == "item:502"
+    and frames.ForeverTouchLeftSet3Action1.attributes.item == "item:503", "a fresh process restores every set from the launcher")
+login("Player-70-CD", nil, nil, {recoveredProfiles = receipt})
+assert(not frames.ForeverTouchLeftAction1, "disk recovery must not apply the profile to another character")
+login(restoredId, nil, nil, {name = "Händler", realm = "My Realm",
+    recoveredProfiles = {profiles = {}, characters = {["70/händler-myrealm"] = recoveredArc}}})
+assert(frames.ForeverTouchCycleSet.text == "Set 2 / 3", "legacy character-only saves use the numeric realm directory")
+
+-- A Save-triggered UI reload still shares the temporary CVars with its old
+-- Lua state, even when the game reloads without its SavedVariables globals.
+local oldCVar, oldEncoding = C_CVar, C_EncodingUtil
+local cvars, packet = {}, nil
+C_CVar = {
+    GetCVar = function(key) return cvars[key] end,
+    SetCVar = function(key, value) cvars[key] = value end,
+    RegisterCVar = function(key, value) cvars[key] = value end,
+}
+C_EncodingUtil = {
+    SerializeCBOR = function(value) packet = copy(value); return ("x"):rep(460) end,
+    EncodeBase64 = function(value) return value end,
+    DecodeBase64 = function(value) return value end,
+    DeserializeCBOR = function(value) if #value == 460 then return copy(packet) end end,
+}
+login(first, legacy)
+click("OpenEditor")
+replaceRight({kind = "spell", id = 203})
+click("SaveEditor")
+assert(reloads == 1 and cvars.foreverTouchSessionProfileCount == "3")
+login(first, nil, nil)
+assert(frames.ForeverTouchRightAction1.attributes.spell == 203 and messages[1] == "Arc layout restored after reload.")
+login(second, nil, nil)
+assert(not frames.ForeverTouchRightAction1 or frames.ForeverTouchRightAction1.attributes.spell ~= 203,
+    "temporary reload data is scoped to the edited character")
+C_CVar, C_EncodingUtil = oldCVar, oldEncoding
 
 -- The swipe stays light while a charge is available, and items show the last unit and zero.
 C_Item.GetItemCount = function() return 1 end
@@ -1025,4 +1149,41 @@ assert(ForeverTouchProfiles[first].mobileSlots.left[1].id == 301)
 login(first, { revision = 10, arcRevision = 10 }, { [first] = older })
 assert(not ForeverTouchPreferences.mobileSlots, "an intentional arc reset survives migration")
 
-print("Passed: arc autosave and upgrade recovery, saved switches, spell rank upgrades, cooldowns and charges, item counts, event batching, picker paging, professions, chat resizing, channel filters, friends, individual whispers and frame limiting.")
+-- Android commits the frame before acknowledging it. WoW never writes the
+-- SavedVariables or leaves the editor while the app's write is still pending.
+local session = "0123456789abcdef"
+GetTimePreciseSec = function() return 123.456 end
+login(first, legacy, nil, { name = "Trainer", realm = "Trial", arcSession = session })
+click("OpenEditor")
+replaceRight({kind = "item", id = 508})
+local after = C_Timer.After
+C_Timer.After = function(seconds, callback) if seconds == 0 then after(seconds, callback) end end
+click("SaveEditor")
+assert(reloads == 0 and not disk and frames.ForeverTouchRightAction1.attributes.spell ~= 508)
+local raster, transferFrame = {}, nil
+for _, frame in ipairs(frames) do
+    if frame:IsVisible() and type(frame.rasterColor) == "number" then
+        local parent = frame:GetParent()
+        if parent and parent:GetFrameStrata() == "TOOLTIP" and parent:GetWidth() == UIParent:GetWidth() / 2 then
+            raster[#raster + 1] = frame.rasterColor
+            transferFrame = parent
+        end
+    end
+end
+assert(transferFrame and #raster > 80)
+local data = {}
+for i = 17, #raster, 2 do data[#data + 1] = string.char(raster[i] * 16 + raster[i + 1]) end
+data = table.concat(data)
+assert(data:sub(1, 3) == "FT\1" and data:sub(29):match('508'), "the selected replacement is in the frame")
+local fixture = os.getenv("FOREVER_TOUCH_ARC_FRAME")
+if fixture then
+    local output = assert(io.open(fixture, "wb"))
+    output:write(string.char(table.unpack(raster)))
+    output:close()
+end
+click("AcceptArcSave")
+assert(reloads == 0 and not disk and not transferFrame:IsShown())
+assert(frames.ForeverTouchRightAction1.attributes.item == "item:508", "the receipt applies the arc without reloading")
+C_Timer.After = after
+
+print("Passed: Android arc save without reload, arc upgrade recovery, saved switches, spell ranks, cooldowns and charges, item counts, event batching, picker paging, professions, chat resizing, channel filters, friends, whispers and frame limiting.")

@@ -30,11 +30,14 @@ internal class MobileTouchControls(private val touchSlop: Float) {
         private set
     var hudEditor by mutableStateOf<MobileHudEditor?>(null)
         private set
+    var savingArc by mutableStateOf(false)
+        private set
     var lookSensitivity = 1f
     private val cameraSlop = (touchSlop * .35f).coerceAtLeast(1f)
 
     private var server: XServer? = null
     private var touchpad: TouchpadView? = null
+    private var saveArc: ((request: () -> Unit, complete: (Boolean) -> Unit) -> Unit)? = null
     private var layout: MobileLayout? = null
     private var stickId = NO_POINTER
     private var cameraId = NO_POINTER
@@ -47,10 +50,15 @@ internal class MobileTouchControls(private val touchSlop: Float) {
     private var editorPointer = NO_POINTER
     private var heldKeys = 0
 
-    fun attach(server: XServer, touchpad: TouchpadView) {
+    fun attach(
+        server: XServer,
+        touchpad: TouchpadView,
+        saveArc: ((request: () -> Unit, complete: (Boolean) -> Unit) -> Unit)? = null,
+    ) {
         releaseAll()
         this.server = server
         this.touchpad = touchpad
+        this.saveArc = saveArc
     }
 
     fun updateLayout(layout: MobileLayout) {
@@ -110,16 +118,42 @@ internal class MobileTouchControls(private val touchSlop: Float) {
     }
 
     fun resetSkillsEditor() {
-        if (hudEditor == MobileHudEditor.Skills) tap(XKeycode.KEY_HOME, modified = true)
+        if (hudEditor == MobileHudEditor.Skills && !savingArc) tap(XKeycode.KEY_HOME, modified = true)
     }
 
     fun closeHudEditor(save: Boolean = true) {
         val editor = hudEditor ?: return
+        if (savingArc) return
         releaseAll()
         if (editor == MobileHudEditor.Skills) {
+            val persist = saveArc
+            if (save && persist != null) {
+                val game = server ?: return
+                savingArc = true
+                persist({ tap(XKeycode.KEY_F1, modified = true) }) { saved ->
+                    if (server === game) {
+                        tap(if (saved) XKeycode.KEY_END else XKeycode.KEY_DEL, modified = true)
+                        if (saved) hudEditor = null
+                        savingArc = false
+                    }
+                }
+                return
+            }
             tap(if (save) XKeycode.KEY_F1 else XKeycode.KEY_F2, modified = true)
         }
         hudEditor = null
+    }
+
+    fun onBackgrounding() {
+        if (hudEditor == MobileHudEditor.Skills) {
+            closeHudEditor(save = true)
+            return
+        }
+        releaseAll()
+        if (saveArc == null && playing && !chatting && !chatFullscreen && hudEditor == null) {
+            // The add-on ignores this shortcut unless there are changes to save.
+            tap(XKeycode.KEY_F1, modified = true)
+        }
     }
 
     fun releaseAll() {
@@ -135,10 +169,13 @@ internal class MobileTouchControls(private val touchSlop: Float) {
     }
 
     fun detach() {
-        closeHudEditor()
+        if (saveArc == null) closeHudEditor()
         releaseAll()
         server = null
         touchpad = null
+        saveArc = null
+        hudEditor = null
+        savingArc = false
         chatting = false
         chatFullscreen = false
     }
@@ -162,6 +199,7 @@ internal class MobileTouchControls(private val touchSlop: Float) {
 
     fun route(event: MotionEvent): Boolean {
         if (!playing || touchpad == null) return false
+        if (savingArc) return true
         when (hudEditor) {
             MobileHudEditor.Controls -> return true
             MobileHudEditor.Skills -> {

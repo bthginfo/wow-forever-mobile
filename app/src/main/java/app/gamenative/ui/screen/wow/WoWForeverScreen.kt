@@ -984,13 +984,16 @@ private suspend fun prepareLaunch(
     onStatus: (String) -> Unit,
 ): String = launchLock.withLock {
     val region = GameRegion.current(context, gameRoot.path)
+    val arcSession = newMobileArcSession()
     MobileLaunchDiagnostics.start(context, gameRoot, region, gpu)
     check(File(gameRoot, BUILD_INFO).exists()) { context.getString(R.string.mobile_launcher_build_info_missing, BUILD_INFO, gameRoot.path) }
     try {
         ensureGameConfig(gameRoot, screenSize, GameRegion.saved(context))
+        val recovery = runCatching { recoverMobileProfiles(gameRoot) }
+            .onFailure { Timber.w(it, "Could not prepare mobile HUD profile recovery") }.getOrNull()
         runCatching { checkpointMobileProfiles(gameRoot) }
             .onFailure { Timber.w(it, "Could not back up the mobile HUD profiles") }
-        installMobileAddon(context, gameRoot)
+        installMobileAddon(context, gameRoot, recovery, arcSession)
     } catch (e: Exception) {
         if (e.isPermissionDenied()) throw StorageAccessDeniedException(e)
         throw e
@@ -1023,8 +1026,11 @@ private suspend fun prepareLaunch(
         check(created != null && created.configFile.length() > 0) {
             context.getString(R.string.mobile_launcher_prefix_error, freeInternalMiB(context))
         }
+        created.putExtra(MOBILE_ARC_SESSION, arcSession)
+        created.saveData()
     } else {
         container.loadData(config)
+        container.putExtra(MOBILE_ARC_SESSION, arcSession)
         container.saveData()
     }
     currentCoroutineContext().ensureActive()

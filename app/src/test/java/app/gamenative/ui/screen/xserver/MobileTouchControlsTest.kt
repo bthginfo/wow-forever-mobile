@@ -56,6 +56,24 @@ class MobileTouchControlsTest {
     }
 
     @Test
+    fun backgroundRequestsASkillSaveForBothOpenAndClosedEditors() {
+        val controls = MobileTouchControls(8f)
+        val game = mockk<XServer>(relaxed = true)
+        controls.attach(game, mockk<TouchpadView>(relaxed = true))
+
+        controls.onBackgrounding()
+        controls.togglePlaying()
+        controls.openHudEditor(MobileHudEditor.Skills)
+        controls.onBackgrounding()
+        assertNull(controls.hudEditor)
+        controls.onBackgrounding()
+        controls.setChatActive(true)
+        controls.onBackgrounding()
+
+        verify(exactly = 2) { game.injectKeyPress(XKeycode.KEY_F1, 0, false) }
+    }
+
+    @Test
     fun tapIsStillASingleFingerWhileTheStickAndCameraAreHeld() {
         checkSinglePointer(MotionEvent.ACTION_POINTER_DOWN, MotionEvent.ACTION_DOWN)
         checkSinglePointer(MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_UP)

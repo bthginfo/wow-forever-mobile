@@ -1,0 +1,1 @@
+-- The Android launcher supplies recovered profile data at game startup.

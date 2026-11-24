@@ -23,6 +23,7 @@ local onChange, widthRatio, heightRatio
 local category, peer, contactPage = "ALL", nil, 1
 local friends, friendsByKey = {}, {}
 local docked, hooked = {}, {}
+local nativeChat
 local stockChat = false
 local input, sizing
 local controlHeight, contactWidth
@@ -582,7 +583,8 @@ function Chat.layout()
     place(expand, "RIGHT", header, "RIGHT", 0, 0, unit, unit * .73)
     write:SetShown(not managedKeyboard)
     place(write, "RIGHT", header, "RIGHT", -unit - 4, 0, unit * 3, unit * .73)
-    stock:SetShown(history.restrictedUnread and category == "WHISPER")
+    stock:SetShown((history.restrictedUnread and category == "WHISPER")
+        or (history.restrictedNativeLine and category == "ALL"))
     place(stock, "RIGHT", header, "RIGHT", -unit * 1.25, 0, unit * 2.1, unit * .73)
 
     local headerVisible = fullscreen or category ~= "ALL" or not managedKeyboard
@@ -663,6 +665,10 @@ local function stream()
 end
 
 local function message(line)
+    if line.nativeColors then
+        transcript:AddMessage(line.text, unpack(line.nativeColors))
+        return
+    end
     local info = ChatTypeInfo and ChatTypeInfo[line.kind]
     local author = line.outgoing and text("You", "Du") or line.author
     local prefix = author and author .. "  " or ""
@@ -701,6 +707,43 @@ refresh = function()
     updateUnread()
 end
 
+local function appendVisibleLine(line)
+    if not line then return end
+    empty:Hide()
+    scrollUp:Show()
+    scrollDown:Show()
+    message(line)
+end
+
+local function attachDefaultChat()
+    local frame = DEFAULT_CHAT_FRAME
+    if not frame or not hooksecurefunc or not frame.AddMessage or frame:IsForbidden() then return end
+    if nativeChat ~= frame then
+        -- The default chat has already formatted and filtered channel notices,
+        -- loot, system text, item links, and messages written directly by the UI.
+        local attached = pcall(hooksecurefunc, frame, "AddMessage", function(source, body, r, g, b)
+            if source ~= nativeChat or not history.nativeSource then return end
+            local line = history.addNative(body, r, g, b)
+            if category == "ALL" and panel:IsShown() then
+                appendVisibleLine(line)
+                if history.restrictedNativeLine then stock:Show() end
+            end
+        end)
+        if not attached then return end
+        nativeChat = frame
+    end
+    history.nativeSource = true
+    if frame.GetMessageInfo and frame.GetNumMessages then
+        local readable, count = pcall(frame.GetNumMessages, frame)
+        if readable and not isSecret(count) and type(count) == "number" then
+            for index = math.max(1, count - 179), count do
+                local ok, body, r, g, b = pcall(frame.GetMessageInfo, frame, index)
+                if ok then history.addNative(body, r, g, b) end
+            end
+        end
+    end
+end
+
 function Chat.queueLayout()
     if layoutQueued then return end
     layoutQueued = true
@@ -721,6 +764,7 @@ function Chat.initialize(preferences, save)
         if type(size.width) == "number" and size.width > 0 then widthRatio = size.width end
         if type(size.height) == "number" and size.height > 0 then heightRatio = size.height end
     end
+    attachDefaultChat()
     Chat.layout()
     refresh()
 end
@@ -761,10 +805,7 @@ function Chat.onMessage(event, ...)
         local lines = stream()
         if lines and lines[#lines] == line then
             if thread and isPrivateChat() then thread.unread = 0 end
-            empty:Hide()
-            scrollUp:Show()
-            scrollDown:Show()
-            message(line)
+            appendVisibleLine(line)
         end
         if thread then layoutContacts() end
     end

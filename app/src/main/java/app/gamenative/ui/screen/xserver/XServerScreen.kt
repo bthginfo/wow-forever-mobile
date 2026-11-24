@@ -109,6 +109,8 @@ import app.gamenative.ui.data.PerformanceHudSize
 import app.gamenative.ui.data.XServerState
 import app.gamenative.GameSessionService
 import app.gamenative.ui.screen.wow.LoginObservation
+import app.gamenative.ui.screen.wow.MOBILE_ARC_SESSION
+import app.gamenative.ui.screen.wow.MobileArcSaver
 import app.gamenative.ui.screen.wow.MobileLaunchDiagnostics
 import app.gamenative.ui.screen.wow.WowMachineIdentity
 import app.gamenative.ui.screen.wow.auth.BattleNetBrowserLogin
@@ -191,6 +193,7 @@ import com.winlator.xserver.Window
 import com.winlator.xserver.WindowManager
 import com.winlator.xserver.XServer
 import com.winlator.xserver.extensions.PresentExtension
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -425,10 +428,7 @@ internal fun XServerScreen(
     val mobileControls = remember(appId) { MobileTouchControls.create(ViewConfiguration.get(context)) }
     DisposableEffect(lifecycleOwner, mobileControls) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_PAUSE) mobileControls.releaseAll()
-            if (event == Lifecycle.Event.ON_STOP && mobileControls.hudEditor == MobileHudEditor.Skills) {
-                mobileControls.closeHudEditor(save = true)
-            }
+            if (event == Lifecycle.Event.ON_PAUSE) mobileControls.onBackgrounding()
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
@@ -465,6 +465,12 @@ internal fun XServerScreen(
 
     val container = remember(appId) {
         ContainerUtils.getContainer(context, appId)
+    }
+    val arcSaver = remember(container) {
+        val session = container.getExtra(MOBILE_ARC_SESSION)
+        val gameRoot = Container.drivesIterator(container.drives).asSequence()
+            .firstOrNull { it[0].equals("G", ignoreCase = true) }?.let { File(it[1]) }
+        if (gameRoot != null && session.matches(Regex("[0-9a-f]{16}"))) MobileArcSaver(gameRoot, session) else null
     }
     val activity = remember(context) { BrightnessManager.findActivity(context) }
     val windowed = remember(activity, LocalConfiguration.current) { activity?.isInMultiWindowMode == true }
@@ -1964,8 +1970,26 @@ internal fun XServerScreen(
                     }
                 }
                 getxServer().renderer = renderer
+                val arcView = this as? XServerView
+                val saveArc: ((() -> Unit, (Boolean) -> Unit) -> Unit)? = if (arcSaver != null && arcView != null) {
+                    { request, complete ->
+                        scope.launch {
+                            val saved = try {
+                                arcSaver.save(arcView, request)
+                            } catch (error: CancellationException) {
+                                throw error
+                            } catch (error: Exception) {
+                                Timber.w(error, "Could not save the mobile arc layout")
+                                false
+                            }
+                            complete(saved)
+                            val message = if (saved) R.string.mobile_arc_saved else R.string.mobile_arc_save_failed
+                            SnackbarManager.show(context.getString(message))
+                        }
+                    }
+                } else null
                 PluviaApp.touchpadView = TouchpadView(context, getxServer(), PrefManager.getBoolean("capture_pointer_on_external_mouse", true))
-                    .also { mobileControls.attach(getxServer(), it) }
+                    .also { mobileControls.attach(getxServer(), it, saveArc) }
                 PluviaApp.touchpadView?.setMoveCursorToTouchpoint(PrefManager.getBoolean("move_cursor_to_touchpoint", false))
 
                 // Wire keyboard toggle callback for gesture "Show Keyboard" action.

@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.drag
@@ -161,6 +162,16 @@ internal fun BoxScope.MobileGameOverlay(
     var toolbar by remember { mutableStateOf(IntSize.Zero) }
 
     Box(Modifier.matchParentSize().onSizeChanged { viewport = it }) {
+        if (controls.savingArc) {
+            Box(
+                Modifier.align(Alignment.Center).fillMaxWidth(.66f).fillMaxHeight(.48f)
+                    .background(Color(0xFF191610), RoundedCornerShape(12.dp)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(stringResource(R.string.mobile_arc_saving), color = overlayText)
+            }
+            return@Box
+        }
         val activePositions = if (editingControls) draftPositions else positions
         val safeArea = Rect(left, top, viewport.width - right, viewport.height - bottom)
         val layout = remember(viewport, safeArea, activePositions, tabletDensity) {

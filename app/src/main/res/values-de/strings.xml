@@ -648,7 +648,10 @@
     <string name="mobile_arrange_skills">Skills bearbeiten</string>
     <string name="mobile_edit_layout">Bedienelemente verschieben</string>
     <string name="mobile_edit_layout_hint">Zieh die Bedienelemente oder die Menüleiste an ihren Platz.</string>
-    <string name="mobile_edit_skills_hint">Wähle einen Slot zum Belegen. Änderungen werden automatisch gespeichert.</string>
+    <string name="mobile_edit_skills_hint">Wähle einen Slot zum Belegen. Tippe zum Speichern auf Fertig.</string>
+    <string name="mobile_arc_saving">Arc-Belegung wird gespeichert …</string>
+    <string name="mobile_arc_saved">Arc-Belegung gespeichert.</string>
+    <string name="mobile_arc_save_failed">Speichern fehlgeschlagen. Tippe erneut auf Fertig.</string>
     <string name="mobile_layout_default">Standard</string>
     <string name="mobile_layout_save">Speichern</string>
     <string name="mobile_layout_done">Fertig</string>

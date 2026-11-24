@@ -3,6 +3,7 @@ package com.winlator.renderer;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.RectF;
 import android.view.Surface;
 import android.widget.Toast;
 
@@ -364,6 +365,29 @@ public class VulkanRenderer implements WindowManager.OnWindowModificationListene
                 viewTransformation.viewOffsetY,
                 viewTransformation.viewWidth,
                 viewTransformation.viewHeight);
+        }
+    }
+
+    /** Bounds of the guest screen in surface pixels, before any clipping by the view. */
+    public RectF getGameSurfaceBounds() {
+        synchronized (lock) {
+            if (fullscreen || outputScalingMode == SCALE_STRETCH) {
+                return new RectF(0, 0, surfaceWidth, surfaceHeight);
+            }
+            float scale = outputScalingMode == SCALE_FILL
+                ? Math.max((float) surfaceWidth / xServer.screenInfo.width,
+                    (float) surfaceHeight / xServer.screenInfo.height)
+                : viewTransformation.aspect;
+            float width = xServer.screenInfo.width * scale;
+            float height = xServer.screenInfo.height * scale;
+            float left = (surfaceWidth - width) * 0.5f;
+            float top = (surfaceHeight - height) * 0.5f;
+            if (outputScalingMode == SCALE_FIT && screenOffsetYRelativeToCursor) {
+                short halfHeight = (short) (xServer.screenInfo.height / 2);
+                top -= Math.max(0, Math.min(xServer.pointer.getY() - halfHeight / 2.0f, halfHeight))
+                    * surfaceHeight / xServer.screenInfo.height;
+            }
+            return new RectF(left, top, left + width, top + height);
         }
     }
 
