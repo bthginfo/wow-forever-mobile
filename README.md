@@ -9,6 +9,8 @@
 
 **Android 10+ · ARM64** · [.31 release](https://github.com/bthginfo/wow-forever-mobile/releases/tag/v2.4.4-mobile.31)
 
+**Fullscreen chat preview.** Install the [.32 Chat Preview](https://github.com/bthginfo/wow-forever-mobile/releases/tag/v2.4.4-mobile.32-chat-preview) alongside the stable launcher to type directly with the Android keyboard. Both Standard and Pixel APKs are available.
+
 **Updating from .27–.30?** Install the matching .31 APK over your existing launcher. If you're coming from .26 with the same app ID, follow the update steps to reuse your WoW folder. [Update instructions](#update-an-existing-installation)
 
 An Android launcher and touch interface for Blizzard’s Windows ARM64 WoW Forever client. The launcher runs the client on the phone using Wine/Proton. It includes a browser-based Battle.net login, Android keyboard and clipboard controls, and a configurable in-game touch HUD.
