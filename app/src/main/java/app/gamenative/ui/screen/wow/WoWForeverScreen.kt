@@ -988,6 +988,8 @@ private suspend fun prepareLaunch(
     check(File(gameRoot, BUILD_INFO).exists()) { context.getString(R.string.mobile_launcher_build_info_missing, BUILD_INFO, gameRoot.path) }
     try {
         ensureGameConfig(gameRoot, screenSize, GameRegion.saved(context))
+        runCatching { checkpointMobileProfiles(gameRoot) }
+            .onFailure { Timber.w(it, "Could not back up the mobile HUD profiles") }
         installMobileAddon(context, gameRoot)
     } catch (e: Exception) {
         if (e.isPermissionDenied()) throw StorageAccessDeniedException(e)

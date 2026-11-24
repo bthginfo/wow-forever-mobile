@@ -12,12 +12,15 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ChatBubbleOutline
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Send
 import androidx.compose.material.icons.filled.SportsEsports
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ButtonDefaults
@@ -178,7 +181,7 @@ internal fun BoxScope.MobileGameOverlay(
             MobileControlSurface(controls, layout, editingControls)
         }
 
-        if (editor != MobileHudEditor.Skills) {
+        if (editor != MobileHudEditor.Skills && !chatting && !chatFullscreen) {
             val toolbarModifier = if (playing && !chatting && !chatFullscreen && safeArea.width > 0f) {
                 Modifier.align(Alignment.TopCenter)
                     .absoluteOffset {
@@ -201,8 +204,6 @@ internal fun BoxScope.MobileGameOverlay(
             ) {
                 if (compactToolbar) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        ToolbarText(R.string.mobile_chat, Icons.Filled.ChatBubbleOutline, field = true, onClick = ::composeMessage)
-                        ToolbarText(R.string.mobile_chat_fullscreen) { controls.showChatFullscreen(true) }
                         IconButton(onClick = { setToolbarMinimized(false) }, modifier = Modifier.size(48.dp)) {
                             Icon(Icons.Filled.KeyboardArrowDown, stringResource(R.string.mobile_expand_toolbar), tint = overlayAccent)
                         }
@@ -213,25 +214,11 @@ internal fun BoxScope.MobileGameOverlay(
                     modifier = Modifier.padding(horizontal = 4.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    if (chatting) {
-                        ToolbarText(R.string.keyboard, Icons.Filled.Keyboard) {
-                            controls.tap(XKeycode.KEY_F8, modified = true)
-                            receiver.showKeyboard { finishChat(send = true) }
-                        }
-                        ToolbarText(R.string.mobile_paste, Icons.Filled.ContentPaste) { receiver.pasteFromClipboard(chat = true) }
-                        ToolbarText(R.string.mobile_chat_send, accent = true) { finishChat(send = true) }
-                        ToolbarText(android.R.string.cancel) { finishChat(send = false) }
-                    } else if (chatFullscreen) {
-                        ToolbarText(R.string.mobile_chat_window) { controls.showChatFullscreen(false) }
-                        ToolbarText(R.string.mobile_chat, Icons.Filled.ChatBubbleOutline, field = true, onClick = ::composeMessage)
-                    } else if (playing) {
+                    if (playing) {
                         Row(
                             modifier = Modifier.weight(1f, fill = false).horizontalScroll(rememberScrollState()),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            ToolbarText(R.string.mobile_chat, Icons.Filled.ChatBubbleOutline, field = true,
-                                enabled = !editingControls, onClick = ::composeMessage)
-                            ToolbarText(R.string.mobile_chat_fullscreen, enabled = !editingControls) { controls.showChatFullscreen(true) }
                             ToolbarText(R.string.mobile_character, enabled = !editingControls) { controls.tap(XKeycode.KEY_F3, modified = true) }
                             Box {
                                 ToolbarText(R.string.mobile_social, enabled = !editingControls) { showSocial = true }
@@ -336,6 +323,50 @@ internal fun BoxScope.MobileGameOverlay(
             }
         }
 
+        if (playing && editor == null && !safeArea.isEmpty) {
+            val gameWidth = viewport.width.toFloat()
+            val gameHeight = viewport.height.toFloat()
+            // Match the managed dock in ForeverTouchChat.lua and stay inside safe areas.
+            val end = if (chatFullscreen) gameWidth * .05f
+                else minOf(gameWidth * .28f, gameHeight * .34f) + maxOf(gameWidth * .045f, gameHeight * .14f) +
+                    gameHeight * .01f
+            val center = gameHeight * (if (chatFullscreen) .073f else .191f)
+            val compact = !chatting && !chatFullscreen
+            val height = if (compact) 35.dp else 44.dp
+            val halfHeight = with(density) { height.toPx() / 2 }
+            val x = maxOf(end, right)
+            val y = maxOf(center - halfHeight, top)
+            Surface(
+                modifier = Modifier.align(Alignment.TopEnd)
+                    .absoluteOffset { IntOffset(-x.roundToInt(), y.roundToInt()) }
+                    .widthIn(max = with(density) { (gameWidth - x - left).coerceAtLeast(0f).toDp() }),
+                color = if (compact) Color(0x72151E2B) else Color(0xBE151E2B),
+                contentColor = Color(0xFFF0F5FF),
+                shape = RoundedCornerShape(22.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (chatting) {
+                        ChatDockButton(R.string.keyboard, Icons.Filled.Keyboard) {
+                            controls.tap(XKeycode.KEY_F8, modified = true)
+                            receiver.showKeyboard { finishChat(send = true) }
+                        }
+                        ChatDockButton(R.string.mobile_paste, Icons.Filled.ContentPaste) { receiver.pasteFromClipboard(chat = true) }
+                        ChatDockButton(R.string.mobile_chat_send, Icons.Filled.Send) { finishChat(send = true) }
+                        ChatDockButton(android.R.string.cancel, Icons.Filled.Close) { finishChat(send = false) }
+                    } else {
+                        ChatDockButton(R.string.mobile_chat, Icons.Filled.Edit, compact, ::composeMessage)
+                        if (chatFullscreen) {
+                            ChatDockButton(R.string.mobile_chat_window, Icons.Filled.Close) { controls.showChatFullscreen(false) }
+                        } else {
+                            ChatDockButton(R.string.mobile_chat_fullscreen, Icons.Filled.Fullscreen, compact = true) {
+                                controls.showChatFullscreen(true)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         if (browserConnectionStalled && !playing && toolbar.height > 0) {
             Surface(
                 modifier = Modifier.align(Alignment.TopCenter).safeDrawingPadding()
@@ -404,19 +435,24 @@ internal fun BoxScope.MobileGameOverlay(
 }
 
 @Composable
+private fun ChatDockButton(label: Int, icon: ImageVector, compact: Boolean = false, onClick: () -> Unit) {
+    IconButton(onClick = onClick, modifier = Modifier.size(if (compact) 35.dp else 44.dp)) {
+        Icon(icon, stringResource(label), modifier = Modifier.size(if (compact) 16.dp else 19.dp))
+    }
+}
+
+@Composable
 private fun ToolbarText(
     label: Int,
     icon: ImageVector? = null,
     accent: Boolean = false,
     enabled: Boolean = true,
-    field: Boolean = false,
     onClick: () -> Unit,
 ) {
     TextButton(
         onClick = onClick,
         enabled = enabled,
         colors = ButtonDefaults.textButtonColors(
-            containerColor = if (field) Color(0xFF263338) else Color.Transparent,
             contentColor = if (accent) overlayAccent else overlayText,
             disabledContentColor = overlayText.copy(alpha = .74f),
         ),

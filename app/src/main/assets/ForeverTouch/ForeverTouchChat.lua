@@ -14,25 +14,28 @@ local tabs = {
     { "PARTY", text("Group", "Gruppe") },
     { "RAID", text("Raid", "Schlachtzug") },
     { "GUILD", text("Guild", "Gilde") },
+    { "FRIENDS", text("Friends", "Freunde") },
 }
 local labels = {}
 for _, tab in ipairs(tabs) do labels[tab[1]] = tab[2] end
 local enabled, expanded, fullscreen, layoutQueued = false, false, false, false
 local onChange, widthRatio, heightRatio
 local category, peer, contactPage = "ALL", nil, 1
+local friends, friendsByKey = {}, {}
 local docked, hooked = {}, {}
 local stockChat = false
 local input, sizing
 local controlHeight, contactWidth
 local refresh, layoutContacts
+local function isPrivateChat() return category == "WHISPER" or category == "FRIENDS" end
+local function activeThread() return peer and (history.peers[peer] or friendsByKey[peer]) end
 
 -- Keep WoW collecting messages for its own chat. Restoring the parent brings
 -- back exactly the native layout, including any changes made in Edit Mode.
 local parked = CreateFrame("Frame", nil, UIParent)
 parked:Hide()
 
-local panel = CreateFrame("Frame", "ForeverTouchChatPanel", UIParent, "BackdropTemplate")
-panel:SetBackdrop({bgFile = "Interface\\Buttons\\WHITE8X8", edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1})
+local panel = CreateFrame("Frame", "ForeverTouchChatPanel", UIParent)
 panel:SetFrameStrata("HIGH")
 panel:EnableMouse(true)
 panel:SetResizable(true)
@@ -45,19 +48,60 @@ local function paint(parent, layer, r, g, b, a)
     return texture
 end
 
+local dimmer = CreateFrame("Frame", nil, UIParent)
+dimmer:SetAllPoints(UIParent)
+dimmer:SetFrameStrata("FULLSCREEN")
+dimmer:EnableMouse(true)
+paint(dimmer, "BACKGROUND", .016, .024, .038, .76)
+dimmer:Hide()
+
+local cornerFile = "Interface\\AddOns\\ForeverTouch\\ChatCorner.tga"
+local function roundFill(frame, layer, radius)
+    local corners, bands = {}, {}
+    for _, point in ipairs({"TOPLEFT", "TOPRIGHT", "BOTTOMLEFT", "BOTTOMRIGHT"}) do
+        local flipX, flipY = point:find("RIGHT") ~= nil, point:find("BOTTOM") ~= nil
+        local corner = frame:CreateTexture(nil, layer)
+        corner:SetTexture(cornerFile)
+        corner:SetTexCoord(flipX and 1 or 0, flipX and 0 or 1, flipY and 1 or 0, flipY and 0 or 1)
+        corner:SetPoint(point)
+        corner:SetSize(radius, radius)
+        corners[#corners + 1] = corner
+    end
+    for _, point in ipairs({"TOP", "BOTTOM"}) do
+        local band = frame:CreateTexture(nil, layer)
+        band:SetPoint(point .. "LEFT", radius, 0)
+        band:SetPoint(point .. "RIGHT", -radius, 0)
+        band:SetHeight(radius)
+        bands[#bands + 1] = band
+    end
+    local center = frame:CreateTexture(nil, layer)
+    center:SetPoint("TOPLEFT", 0, -radius)
+    center:SetPoint("BOTTOMRIGHT", 0, radius)
+    bands[#bands + 1] = center
+    return { SetColorTexture = function(_, r, g, b, a)
+        for _, corner in ipairs(corners) do corner:SetVertexColor(r, g, b, a) end
+        for _, band in ipairs(bands) do band:SetColorTexture(r, g, b, a) end
+    end }
+end
+panel.fill = roundFill(panel, "BACKGROUND", 15)
+
 local function label(parent, anchor, font)
     local fontString = parent:CreateFontString(nil, "OVERLAY", font or "GameFontHighlight")
     fontString:SetJustifyH(anchor or "LEFT")
     fontString:SetWordWrap(false)
-    fontString:SetTextColor(.88, .94, .97)
+    fontString:SetTextColor(.92, .95, 1)
+    fontString:SetShadowColor(0, 0, 0, .92)
+    fontString:SetShadowOffset(1, -1)
     return fontString
 end
 
 local function button(parent, name, caption, action)
     local control = CreateFrame("Button", name, parent)
     control:RegisterForClicks("LeftButtonUp")
-    control.fill = paint(control, "BACKGROUND", .11, .20, .25, .88)
-    control.highlight = paint(control, "HIGHLIGHT", .59, .83, .87, .18)
+    control.fill = roundFill(control, "BACKGROUND", 7)
+    control.fill:SetColorTexture(.10, .13, .19, .78)
+    control.highlight = roundFill(control, "HIGHLIGHT", 7)
+    control.highlight:SetColorTexture(.70, .81, 1, .16)
     control.caption = label(control, "CENTER")
     control.caption:SetPoint("TOPLEFT", 4, 0)
     control.caption:SetPoint("BOTTOMRIGHT", -4, 0)
@@ -65,6 +109,30 @@ local function button(parent, name, caption, action)
     control:SetScript("OnClick", action)
     return control
 end
+
+local function icon(buttonFrame, segments, offsetX)
+    local drawing = CreateFrame("Frame", nil, buttonFrame)
+    drawing:SetSize(18, 18)
+    drawing:SetPoint("CENTER", offsetX or 0, 0)
+    for _, segment in ipairs(segments) do
+        local x1, y1, x2, y2 = unpack(segment)
+        local line = drawing:CreateLine(nil, "OVERLAY")
+        line:SetColorTexture(.9, .95, 1, .94)
+        line:SetThickness(1.6)
+        line:SetStartPoint("CENTER", drawing, x1, y1)
+        line:SetEndPoint("CENTER", drawing, x2, y2)
+    end
+    return drawing
+end
+local chevronDown = {{-4, 2, 0, -2}, {0, -2, 4, 2}}
+local chevronUp = {{-4, -2, 0, 2}, {0, 2, 4, -2}}
+local chevronLeft = {{2, 4, -2, 0}, {-2, 0, 2, -4}}
+local chevronRight = {{-2, 4, 2, 0}, {2, 0, -2, -4}}
+local expandCorners = {
+    {-6, 1, -6, 6}, {-6, 6, -1, 6}, {1, 6, 6, 6}, {6, 6, 6, 1},
+    {-6, -1, -6, -6}, {-6, -6, -1, -6}, {1, -6, 6, -6}, {6, -6, 6, -1},
+}
+local closeCross = {{-4, 4, 4, -4}, {-4, -4, 4, 4}}
 
 local toggle = button(UIParent, "ForeverTouchChatToggle", "Chat", function()
     if input then return end
@@ -75,6 +143,7 @@ local toggle = button(UIParent, "ForeverTouchChatToggle", "Chat", function()
         return
     end
     expanded = not expanded
+    if not expanded then category, peer, contactPage = "ALL", nil, 1 end
     if expanded then
         if history.restrictedUnread then category, peer, contactPage = "WHISPER", nil, 1 end
         for _, thread in ipairs(history.contacts) do
@@ -89,23 +158,31 @@ local toggle = button(UIParent, "ForeverTouchChatToggle", "Chat", function()
     refresh()
 end)
 toggle:SetFrameStrata("HIGH")
+toggle.fill:SetColorTexture(.07, .11, .17, .63)
+toggle.caption:SetJustifyH("LEFT")
+toggle.caption:SetPoint("TOPLEFT", 10, 0)
+toggle.caption:SetPoint("BOTTOMRIGHT", -30, 0)
+local toggleArrow = icon(toggle, chevronDown)
+toggleArrow:ClearAllPoints()
+toggleArrow:SetPoint("RIGHT", -4, 0)
 toggle:Hide()
 local unread = toggle:CreateTexture("ForeverTouchUnreadWhisper", "OVERLAY")
 unread:SetTexture("Interface\\CharacterFrame\\TempPortraitAlphaMask")
 unread:SetVertexColor(1, .26, .32)
-unread:SetPoint("RIGHT", -9, 0)
+unread:SetPoint("RIGHT", -22, 0)
 unread:SetSize(9, 9)
 unread:Hide()
 
 local header = CreateFrame("Frame", nil, panel)
-local title = label(header, "LEFT", "GameFontNormalLarge")
+local title = label(header, "LEFT", "GameFontHighlightLarge")
 local back = button(header, "ForeverTouchChatBack", text("All", "Alle"), function()
     if input then return end
     category, peer, contactPage = "ALL", nil, 1
     Chat.layout()
     refresh()
 end)
-local expand = button(header, "ForeverTouchChatExpand", "↗", function() Chat.setFullscreen(not fullscreen) end)
+local expand = button(header, "ForeverTouchChatExpand", "", function() Chat.setFullscreen(not fullscreen) end)
+local expandIcon, closeIcon = icon(expand, expandCorners), icon(expand, closeCross)
 local write = button(header, "ForeverTouchChatWrite", text("Message…", "Nachricht…"), function() Chat.open() end)
 local stock = button(header, "ForeverTouchChatStock", text("WoW chat", "WoW-Chat"), function()
     if input then return end
@@ -115,46 +192,60 @@ local stock = button(header, "ForeverTouchChatStock", text("WoW chat", "WoW-Chat
 end)
 
 local tabsBar = CreateFrame("Frame", nil, panel)
+tabsBar.fill = roundFill(tabsBar, "BACKGROUND", 8)
+tabsBar.fill:SetColorTexture(.09, .12, .18, .97)
 for _, tab in ipairs(tabs) do
     local key = tab[1]
     tab.button = button(tabsBar, "ForeverTouchChatTab" .. key, tab[2], function()
         if input then return end
         category, peer, contactPage = key, nil, 1
+        if key == "FRIENDS" then
+            if C_FriendList and C_FriendList.ShowFriends then C_FriendList.ShowFriends() end
+            Chat.updateFriends()
+        end
         Chat.layout()
         refresh()
     end)
 end
 
 local contacts = CreateFrame("Frame", nil, panel)
-paint(contacts, "BACKGROUND", .07, .12, .16, .93)
+contacts.fill = roundFill(contacts, "BACKGROUND", 10)
+contacts.fill:SetColorTexture(.069, .092, .145, .92)
+local sidebarTitle = label(contacts, "LEFT", "GameFontNormalSmall")
 local rows = {}
 for index = 1, 10 do
     local row = button(contacts, "ForeverTouchChatContact" .. index, "", function(self)
-        if self.thread and not input then
-            peer = self.thread.key
+        if self.contact and not input then
+            peer = self.contact.key
             refresh()
         end
     end)
     row.caption:SetJustifyH("LEFT")
     row.caption:ClearAllPoints()
-    row.caption:SetPoint("TOPLEFT", 11, -4)
+    row.caption:SetPoint("TOPLEFT", 32, -4)
     row.caption:SetPoint("BOTTOMRIGHT", -36, 18)
     row.preview = label(row, "LEFT", "GameFontDisableSmall")
-    row.preview:SetPoint("TOPLEFT", 11, -23)
+    row.preview:SetPoint("TOPLEFT", 32, -23)
     row.preview:SetPoint("BOTTOMRIGHT", -11, 2)
     row.badge = label(row, "RIGHT", "GameFontNormalSmall")
     row.badge:SetPoint("RIGHT", -10, 6)
     row.badge:SetTextColor(1, .52, .57)
+    local avatar = CreateFrame("Frame", nil, row)
+    avatar:SetSize(18, 18)
+    avatar:SetPoint("LEFT", 7, 0)
+    row.indicator = roundFill(avatar, "OVERLAY", 9)
     rows[index] = row
 end
-local previous = button(contacts, "ForeverTouchChatContactsPrev", "‹", function()
+local previous = button(contacts, "ForeverTouchChatContactsPrev", "", function()
     contactPage = math.max(1, contactPage - 1)
     layoutContacts()
 end)
-local nextPage = button(contacts, "ForeverTouchChatContactsNext", "›", function()
+local nextPage = button(contacts, "ForeverTouchChatContactsNext", "", function()
     contactPage = contactPage + 1
     layoutContacts()
 end)
+icon(previous, chevronLeft)
+icon(nextPage, chevronRight)
 
 local transcript = CreateFrame("ScrollingMessageFrame", "ForeverTouchChatTranscript", panel)
 transcript:SetFontObject(GameFontHighlight)
@@ -191,9 +282,11 @@ transcript:SetScript("OnMouseUp", stopScroll)
 transcript:SetScript("OnHide", stopScroll)
 local empty = label(panel, "CENTER")
 empty:SetPoint("CENTER", transcript)
-local scrollUp = button(panel, "ForeverTouchChatPageUp", "↑", function() transcript:PageUp() end)
-local scrollDown = button(panel, "ForeverTouchChatLatest", "↓", function() transcript:ScrollToBottom() end)
-local resize = button(panel, "ForeverTouchChatResize", "↙", function(self)
+local scrollUp = button(panel, "ForeverTouchChatPageUp", "", function() transcript:PageUp() end)
+local scrollDown = button(panel, "ForeverTouchChatLatest", "", function() transcript:ScrollToBottom() end)
+icon(scrollUp, chevronUp)
+icon(scrollDown, chevronDown)
+local resize = button(panel, "ForeverTouchChatResize", "", function(self)
     if self.dragged then return end
     local width = panel:GetWidth() / UIParent:GetHeight()
     if width < .6 then
@@ -206,6 +299,10 @@ local resize = button(panel, "ForeverTouchChatResize", "↙", function(self)
     onChange(expanded, widthRatio, heightRatio)
     Chat.layout()
 end)
+icon(resize, {{-6, 1, 1, -6}, {-6, 5, 5, -6}})
+for _, control in ipairs({scrollUp, scrollDown, resize}) do
+    control.fill:SetColorTexture(.06, .09, .13, .54)
+end
 resize:SetScript("OnEnter", function(self)
     if not GameTooltip then return end
     GameTooltip:SetOwner(self, "ANCHOR_BOTTOMLEFT")
@@ -213,7 +310,8 @@ resize:SetScript("OnEnter", function(self)
     GameTooltip:Show()
 end)
 resize:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
-local unavailable = CreateFrame("EditBox", "ForeverTouchChatUnavailable", panel)
+local unavailable = CreateFrame("EditBox", "ForeverTouchChatUnavailable", UIParent)
+unavailable:SetFrameStrata("FULLSCREEN_DIALOG")
 unavailable:SetFontObject(GameFontDisableSmall)
 unavailable:SetAutoFocus(false)
 unavailable:SetMaxLetters(1)
@@ -296,23 +394,82 @@ local function cleanPreview(value)
         :gsub("|r", ""):gsub("|[TA].-|[ta]", ""):gsub("[\r\n]", " "))
 end
 
+local function availableName(value)
+    if not isSecret(value) and type(value) == "string" and value ~= "" then return value end
+end
+
+function Chat.updateFriends()
+    friends, friendsByKey = {}, {}
+    local function add(name, kind, accountID, online, detail)
+        name, detail = availableName(name), availableName(detail)
+        if not name then return end
+        local key = history.whisperKey(name, kind, accountID)
+        if friendsByKey[key] then return end
+        local contact = { key = key, name = name, kind = kind, accountID = accountID,
+            online = not isSecret(online) and online == true, detail = detail }
+        friends[#friends + 1], friendsByKey[key] = contact, contact
+    end
+    if C_FriendList and C_FriendList.GetNumFriends and C_FriendList.GetFriendInfoByIndex then
+        local count = C_FriendList.GetNumFriends()
+        for index = 1, not isSecret(count) and type(count) == "number" and count or 0 do
+            local friend = C_FriendList.GetFriendInfoByIndex(index)
+            if not isSecret(friend) and friend then
+                add(friend.name, "WHISPER", nil, friend.connected, friend.area)
+            end
+        end
+    end
+    if C_BattleNet and C_BattleNet.GetFriendAccountInfo and BNGetNumFriends then
+        local count = BNGetNumFriends()
+        for index = 1, not isSecret(count) and type(count) == "number" and count or 0 do
+            local account = C_BattleNet.GetFriendAccountInfo(index)
+            if not isSecret(account) and account and not isSecret(account.bnetAccountID)
+                and type(account.bnetAccountID) == "number" and account.bnetAccountID > 0 then
+                local game = account.gameAccountInfo
+                local online = not isSecret(game) and game and game.isOnline
+                add(account.accountName, "BN_WHISPER", account.bnetAccountID, online, "Battle.net")
+            end
+        end
+    end
+    table.sort(friends, function(a, b)
+        if a.online ~= b.online then return a.online end
+        local first, second = a.name:lower(), b.name:lower()
+        if first ~= second then return first < second end
+        return a.key < b.key
+    end)
+    if category == "FRIENDS" and peer and not friendsByKey[peer] then peer = nil end
+end
+
 layoutContacts = function()
     if not contacts:IsShown() then return end
+    local showingFriends = category == "FRIENDS"
+    local entries = showingFriends and friends or history.contacts
     local rowHeight = controlHeight * 1.15
-    local visible = math.max(1, math.min(#rows, math.floor((contacts:GetHeight() - controlHeight - 8) / rowHeight)))
-    local pages = math.max(1, math.ceil(#history.contacts / visible))
+    local visible = math.max(1, math.min(#rows, math.floor((contacts:GetHeight() - controlHeight * 1.65 - 10) / rowHeight)))
+    local pages = math.max(1, math.ceil(#entries / visible))
     contactPage = math.min(pages, contactPage)
+    place(sidebarTitle, "TOPLEFT", contacts, "TOPLEFT", 12, -4, contactWidth - 24, controlHeight * .67)
+    sidebarTitle:SetText(showingFriends and labels.FRIENDS or labels.WHISPER)
     for index, row in ipairs(rows) do
-        local thread = index <= visible and history.contacts[(contactPage - 1) * visible + index]
-        row.thread = thread
-        row:SetShown(thread ~= nil and thread ~= false)
-        if thread then
-            place(row, "TOPLEFT", contacts, "TOPLEFT", 4, -4 - (index - 1) * rowHeight,
-                contactWidth - 8, rowHeight - 3)
-            row.fill:SetColorTexture(.19, .35, .40, thread.key == peer and .94 or .38)
-            row.caption:SetText(thread.name)
-            row.preview:SetText(cleanPreview(thread.lines[#thread.lines].text))
-            row.badge:SetText(thread.unread > 0 and tostring(math.min(thread.unread, 99)) or "")
+        local contact = index <= visible and entries[(contactPage - 1) * visible + index]
+        row.contact = contact
+        row:SetShown(contact ~= nil and contact ~= false)
+        if contact then
+            place(row, "TOPLEFT", contacts, "TOPLEFT", 6, -controlHeight * .77 - (index - 1) * rowHeight,
+                contactWidth - 12, rowHeight - 4)
+            row.fill:SetColorTexture(.16, .26, .43, contact.key == peer and .98 or .30)
+            local thread = history.peers[contact.key]
+            row.caption:SetText(contact.name)
+            if showingFriends then
+                local status = contact.online and text("Online", "Online") or text("Offline", "Offline")
+                row.preview:SetText(contact.detail and (status .. " · " .. contact.detail) or status)
+                if contact.online then row.indicator:SetColorTexture(.18, .67, .43, .96)
+                else row.indicator:SetColorTexture(.29, .34, .45, .9) end
+            else
+                local line = thread and thread.lines[#thread.lines]
+                row.preview:SetText(line and cleanPreview(line.text) or "")
+                row.indicator:SetColorTexture(.31, .53, .98, .92)
+            end
+            row.badge:SetText(thread and thread.unread > 0 and tostring(math.min(thread.unread, 99)) or "")
         end
     end
     local footerHeight = controlHeight * .75
@@ -327,9 +484,10 @@ local function inGroup(categoryID)
 end
 
 local function destination()
-    if category == "WHISPER" then
-        local thread = peer and history.peers[peer]
+    if isPrivateChat() then
+        local thread = activeThread()
         if not thread then return end
+        if category == "FRIENDS" and (not friendsByKey[peer] or not friendsByKey[peer].online) then return end
         if thread.accountID and BNet_GetBNetIDAccount then
             local resolved = BNet_GetBNetIDAccount(thread.name)
             if isSecret(resolved) or resolved ~= thread.accountID then return end
@@ -378,13 +536,15 @@ function Chat.layout()
     if not enabled or (EditModeManagerFrame and EditModeManagerFrame:IsEditModeActive()) then return end
     local width, height = UIParent:GetSize()
     if width <= 0 or height <= 0 then return end
-    local right = rightInset(width, height)
+    -- The launcher can place its IME and full-chat buttons alongside this dock.
+    local right = managedKeyboard and math.min(width * .28, height * .34) or rightInset(width, height)
     local unit, gap = math.max(25, math.min(height * .062, width * .08)), math.max(6, height * .012)
     controlHeight = unit
-    place(toggle, "TOPRIGHT", UIParent, "TOPRIGHT", -right, -height * .139,
-        math.max(64, height * .14), unit)
-    toggle.caption:SetText(stockChat and text("Mobile chat", "Mobiler Chat") or (expanded and "Chat ▾" or "Chat ▸"))
+    place(toggle, "TOPRIGHT", UIParent, "TOPRIGHT", -right, -height * .16,
+        math.max(width * .045, height * .14), unit)
+    toggle.caption:SetText(stockChat and text("Mobile", "Mobil") or "Chat")
     toggle:SetShown(not fullscreen or stockChat)
+    dimmer:SetShown(fullscreen and not stockChat)
     syncDock(stockChat)
     panel:SetShown(not stockChat and (expanded or fullscreen or input ~= nil))
     if not panel:IsShown() then return end
@@ -393,44 +553,49 @@ function Chat.layout()
     if not sizing then
         if fullscreen then
             panel:SetFrameStrata("FULLSCREEN_DIALOG")
-            place(panel, "TOPLEFT", UIParent, "TOPLEFT", width * .018, -height * .15,
-                width * .964, height * .82)
+            place(panel, "TOPLEFT", UIParent, "TOPLEFT", width * .025, -height * .035,
+                width * .95, height * .93)
         else
             panel:SetFrameStrata("HIGH")
             local w = math.min(maxW, math.max(minW, (widthRatio or .67) * height))
             local h = math.min(maxH, math.max(minH, (heightRatio or .31) * height))
-            place(panel, "TOPRIGHT", UIParent, "TOPRIGHT", -right, -height * .139 - unit - gap, w, h)
+            place(panel, "TOPRIGHT", UIParent, "TOPRIGHT", -right, -height * .16 - unit - gap, w, h)
             panel:SetResizeBounds(minW, minH, maxW, maxH)
         end
     end
-    panel:SetBackdropColor(.043, .073, .095, fullscreen and .97 or .77)
-    panel:SetBackdropBorderColor(.39, .68, .72, .68)
+    panel.fill:SetColorTexture(.042, .057, .086, fullscreen and .99 or 0)
+    panel:EnableMouse(fullscreen)
+    transcript:SetFading(not fullscreen and not input)
 
     header:SetPoint("TOPLEFT", gap, -gap)
     header:SetPoint("TOPRIGHT", -gap, -gap)
-    header:SetHeight(unit * .75)
-    title:SetPoint("TOPLEFT", header, "TOPLEFT", 2, 0)
-    local titleInset = managedKeyboard and (category ~= "ALL" and not fullscreen and unit * 1.2 or 0)
-        or unit * 4.05
+    header:SetHeight(unit * .82)
+    title:SetPoint("TOPLEFT", header, "TOPLEFT", fullscreen and gap or 2, 0)
+    local titleInset = fullscreen and panel:GetWidth() * .3 or (managedKeyboard and unit * 1.35 or unit * 4.1)
     title:SetPoint("BOTTOMRIGHT", header, "BOTTOMRIGHT", -titleInset, 0)
+    title:SetShown(fullscreen or category ~= "ALL")
     back:SetShown(not fullscreen and category ~= "ALL")
     place(back, "RIGHT", header, "RIGHT", managedKeyboard and 0 or -unit * 4.25, 0, unit * 1.14, unit * .73)
     expand:SetShown(not managedKeyboard)
+    expandIcon:SetShown(not fullscreen)
+    closeIcon:SetShown(fullscreen)
     place(expand, "RIGHT", header, "RIGHT", 0, 0, unit, unit * .73)
     write:SetShown(not managedKeyboard)
     place(write, "RIGHT", header, "RIGHT", -unit - 4, 0, unit * 3, unit * .73)
     stock:SetShown(history.restrictedUnread and category == "WHISPER")
     place(stock, "RIGHT", header, "RIGHT", -unit * 1.25, 0, unit * 2.1, unit * .73)
 
-    local offset = unit * .75 + gap * 2
+    local headerVisible = fullscreen or category ~= "ALL" or not managedKeyboard
+    local offset = headerVisible and unit * .82 + gap * 2 or gap
     tabsBar:SetShown(fullscreen)
     if fullscreen then
         local available = panel:GetWidth() - gap * 2
         place(tabsBar, "TOPLEFT", panel, "TOPLEFT", gap, -offset, available, unit)
-        local tabWidth = (available - (#tabs - 1) * 4) / #tabs
+        local tabWidth = (available - (#tabs + 1) * 4) / #tabs
         for index, tab in ipairs(tabs) do
-            place(tab.button, "LEFT", tabsBar, "LEFT", (index - 1) * (tabWidth + 4), 0, tabWidth, unit)
-            tab.button.fill:SetColorTexture(.18, .33, .39, tab[1] == category and 1 or .68)
+            place(tab.button, "LEFT", tabsBar, "LEFT", 4 + (index - 1) * (tabWidth + 4), 0, tabWidth, unit - 8)
+            tab.button.fill:SetColorTexture(.21, .38, .69, tab[1] == category and .98 or 0)
+            tab.button.caption:SetTextColor(tab[1] == category and 1 or .76, .86, .98)
         end
         offset = offset + unit + gap
     end
@@ -442,7 +607,7 @@ function Chat.layout()
         input.frame:SetFrameLevel(panel:GetFrameLevel() + 4)
         offset = offset + unit
     end
-    local sidebar = fullscreen and category == "WHISPER"
+    local sidebar = fullscreen and isPrivateChat()
     contacts:SetShown(sidebar)
     local left = gap + 3
     if sidebar then
@@ -492,8 +657,8 @@ end)
 resize:SetScript("OnHide", finishResize)
 
 local function stream()
-    if category ~= "WHISPER" then return history.lines[category] end
-    local thread = peer and history.peers[peer]
+    if not isPrivateChat() then return history.lines[category] end
+    local thread = activeThread()
     return thread and thread.lines
 end
 
@@ -510,19 +675,25 @@ local function message(line)
 end
 
 refresh = function()
-    local thread = peer and history.peers[peer]
+    local thread = activeThread()
     if panel:IsShown() then
-        if category == "WHISPER" and thread then thread.unread = 0 end
+        if isPrivateChat() and thread and thread.unread then thread.unread = 0 end
         title:SetText(category == "ALL" and "Chat" or (thread and thread.name or labels[category]))
         transcript:Clear()
         local lines = stream()
         for _, line in ipairs(lines or {}) do message(line) end
-        local hint = category == "WHISPER" and not thread
+        local hint = category == "FRIENDS" and not thread
+            and (#friends == 0 and text("No friends to display", "Keine Freunde verfügbar")
+                or text("Select a friend", "Freund auswählen"))
+            or category == "WHISPER" and not thread
             and (history.restrictedUnread and text("A whisper is available in WoW chat.", "Ein Flüstern ist im WoW-Chat verfügbar.")
                 or text("Choose a conversation", "Unterhaltung auswählen"))
             or text("No messages in this session", "Keine Nachrichten in dieser Sitzung")
         empty:SetText(hint)
-        empty:SetShown(not lines or #lines == 0)
+        local hasLines = lines and #lines > 0
+        empty:SetShown(fullscreen and not hasLines)
+        scrollUp:SetShown(hasLines == true)
+        scrollDown:SetShown(hasLines == true)
         transcript:ScrollToBottom()
         layoutContacts()
         Chat.updateChannels()
@@ -541,7 +712,9 @@ end
 
 function Chat.initialize(preferences, save)
     history.reset()
+    friends, friendsByKey = {}, {}
     category, peer, contactPage, stockChat = "ALL", nil, 1, false
+    fullscreen, widthRatio, heightRatio = false, nil, nil
     expanded, enabled, onChange = preferences.mobileChatOpen == true, true, save
     local size = preferences.mobileChatSize
     if type(size) == "table" then
@@ -567,6 +740,7 @@ function Chat.suspend()
     if input and not input.frame:IsForbidden() then input.frame:ClearFocus() end
     detachInput()
     syncDock(true)
+    dimmer:Hide()
     toggle:Hide()
     panel:Hide()
 end
@@ -576,6 +750,7 @@ function Chat.setFullscreen(active)
     finishResize()
     stockChat = false
     fullscreen = active
+    if not active and category == "FRIENDS" then category, peer, contactPage = "ALL", nil, 1 end
     Chat.layout()
     refresh()
 end
@@ -585,8 +760,10 @@ function Chat.onMessage(event, ...)
     if panel:IsShown() and line then
         local lines = stream()
         if lines and lines[#lines] == line then
-            if thread and category == "WHISPER" then thread.unread = 0 end
+            if thread and isPrivateChat() then thread.unread = 0 end
             empty:Hide()
+            scrollUp:Show()
+            scrollDown:Show()
             message(line)
         end
         if thread then layoutContacts() end
@@ -610,7 +787,7 @@ function Chat.open()
         if UIErrorsFrame then
             UIErrorsFrame:AddMessage(text("Choose an available chat or conversation.", "Wähle einen verfügbaren Chat oder eine Unterhaltung."))
         end
-        if managedKeyboard and panel:IsVisible() then
+        if managedKeyboard then
             -- The platform keyboard can already be opening. Keep its keys out of gameplay.
             unavailable:SetSize(1, 1)
             unavailable:SetPoint("CENTER")
@@ -655,4 +832,18 @@ end
 
 local reader = CreateFrame("Frame")
 for _, event in ipairs(history.events) do reader:RegisterEvent(event) end
-reader:SetScript("OnEvent", function(_, event, ...) Chat.onMessage(event, ...) end)
+local friendEvents = {
+    FRIENDLIST_UPDATE = true, BN_FRIEND_INFO_CHANGED = true, BN_FRIEND_LIST_SIZE_CHANGED = true,
+    BN_CONNECTED = true, BN_DISCONNECTED = true,
+}
+for event in pairs(friendEvents) do reader:RegisterEvent(event) end
+reader:SetScript("OnEvent", function(_, event, ...)
+    if friendEvents[event] then
+        if enabled and fullscreen and category == "FRIENDS" then
+            Chat.updateFriends()
+            refresh()
+        end
+    else
+        Chat.onMessage(event, ...)
+    end
+end)

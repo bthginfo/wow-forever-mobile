@@ -92,6 +92,16 @@ local function preferenceRevision(profile)
     return type(profile.revision) == "number" and profile.revision or 0
 end
 
+local arcFields = { "mobileSlots", "mobileArcPositions", "mobileArcPages", "mobileArcPage", "order", "favorites" }
+local function arcRevision(profile)
+    if type(profile) ~= "table" then return -1 end
+    if type(profile.arcRevision) == "number" then return profile.arcRevision end
+    for _, field in ipairs(arcFields) do
+        if profile[field] ~= nil then return preferenceRevision(profile) end
+    end
+    return -1
+end
+
 local function readableName(value)
     if not isSecret(value) and type(value) == "string" and value ~= "" then return value end
 end
@@ -115,6 +125,18 @@ local function loadPreferences()
     -- Keep the legacy GUID lookup and a name fallback for clients that withhold the GUID.
     profileKey, alternateProfileKey = guid or nameKey, guid and nameKey
     preferences = type(primary) == "table" and CopyTable(primary) or {}
+    local arcs = primary
+    if arcRevision(ForeverTouchPreferences) > arcRevision(arcs) then arcs = ForeverTouchPreferences end
+    if arcRevision(byGUID) > arcRevision(arcs) then arcs = byGUID end
+    if arcRevision(byName) > arcRevision(arcs) then arcs = byName end
+    -- A newer chat setting can be saved while an older backup still holds the last arc edits.
+    if arcs ~= primary then
+        for _, field in ipairs(arcFields) do
+            local value = arcs[field]
+            preferences[field] = type(value) == "table" and CopyTable(value) or value
+        end
+        preferences.arcRevision = arcRevision(arcs)
+    end
     confirmSaved = preferences.confirmArcSave
     preferences.confirmArcSave = nil
     ForeverTouchPreferences = preferences
@@ -131,16 +153,25 @@ local function saveFeedback(message)
     if UIErrorsFrame then UIErrorsFrame:AddMessage(message, .42, .91, .64, 1) end
 end
 
+local function requestReload(reload)
+    if not reload then return false end
+    local ok, result = pcall(reload)
+    return ok and result ~= false
+end
+
 local function flushSave()
     if not pendingSave or saveQueued or draft or InCombatLockdown() then return end
     saveQueued = true
     C_Timer.After(0, function()
         saveQueued = false
         if not pendingSave or draft or InCombatLockdown() then return end
-        pendingSave = false
         checkpointPreferences()
-        local reload = C_UI and C_UI.Reload or ReloadUI
-        if reload then reload() end
+        local reload = C_UI and C_UI.Reload
+        if requestReload(reload) or (ReloadUI ~= reload and requestReload(ReloadUI)) then
+            pendingSave = false
+        else
+            saveFeedback(german and "Arc-Belegung wird beim Ausloggen gespeichert." or "Arc layout will save when you log out.")
+        end
     end)
 end
 
@@ -322,6 +353,7 @@ local function savedPages(persistUpgrades)
     end
     if saved then
         preferences.revision = preferenceRevision(preferences) + 1
+        preferences.arcRevision = preferences.revision
         checkpointPreferences()
     end
     return pages
@@ -344,6 +376,7 @@ local function checkpointDraft()
     preferences.mobileArcPages = #more > 0 and more or nil
     preferences.mobileArcPage = draft.index > 1 and draft.index or nil
     preferences.revision = preferenceRevision(preferences) + 1
+    preferences.arcRevision = preferences.revision
     preferences.confirmArcSave = true
     checkpointPreferences()
     draft.edited, pendingSave, staleSetBindings = true, true, true
@@ -900,6 +933,7 @@ end
 
 local function loadHudPreferences()
     loadPreferences()
+    checkpointPreferences()
     Chat.initialize(preferences, function(expanded, width, height)
         local size = preferences.mobileChatSize
         if preferences.mobileChatOpen == expanded and size

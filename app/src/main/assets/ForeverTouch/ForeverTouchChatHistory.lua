@@ -31,8 +31,12 @@ local function append(lines, line, limit)
     if #lines > limit then table.remove(lines, 1) end
 end
 
+function history.whisperKey(name, kind, accountID)
+    return kind .. ":" .. (accountID and tostring(accountID) or name:lower())
+end
+
 local function whisperThread(name, kind, accountID)
-    local key = kind .. ":" .. (accountID and tostring(accountID) or name:lower())
+    local key = history.whisperKey(name, kind, accountID)
     local thread = history.peers[key]
     if not thread then
         thread = { key = key, name = name, kind = kind, accountID = accountID, lines = {}, unread = 0 }

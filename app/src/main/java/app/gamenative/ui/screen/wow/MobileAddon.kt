@@ -17,28 +17,32 @@ internal fun installMobileAddon(context: Context, gameRoot: File) {
     }
     val scripts = listOf(
         "ForeverTouchActions.lua", "ForeverTouchPicker.lua", "ForeverTouchChatHistory.lua",
-        "ForeverTouchChat.lua", "ForeverTouchMobileLayout.lua",
+        "ForeverTouchChat.lua", "ForeverTouchMobileLayout.lua", "ChatCorner.tga",
     ).map { name ->
         name to context.assets.open("ForeverTouch/$name").use { it.readBytes() }
     }
     // Forever prefers the Camelot manifest installed by the HUD ZIP. Refresh it together with the fallback.
     val files = scripts + listOf("ForeverTouch.toc" to manifest, "ForeverTouch_Camelot.toc" to manifest)
     for ((name, bundled) in files) {
-        val installed = File(addon, name)
-        if (installed.isFile && installed.length() == bundled.size.toLong() &&
-            installed.readBytes().contentEquals(bundled)
-        ) continue
+        writeMobileAddonFile(File(addon, name), bundled)
+    }
+}
 
-        val staging = File.createTempFile(name, ".part", addon)
+internal fun writeMobileAddonFile(destination: File, contents: ByteArray) {
+    if (destination.isFile && destination.length() == contents.size.toLong() &&
+        destination.readBytes().contentEquals(contents)
+    ) return
+    val directory = checkNotNull(destination.parentFile)
+    check(directory.isDirectory || directory.mkdirs()) { "Could not create ${directory.name}." }
+    val staging = File.createTempFile(destination.name, ".part", directory)
+    try {
+        staging.writeBytes(contents)
         try {
-            staging.writeBytes(bundled)
-            try {
-                Files.move(staging.toPath(), installed.toPath(), ATOMIC_MOVE, REPLACE_EXISTING)
-            } catch (_: AtomicMoveNotSupportedException) {
-                Files.move(staging.toPath(), installed.toPath(), REPLACE_EXISTING)
-            }
-        } finally {
-            staging.delete()
+            Files.move(staging.toPath(), destination.toPath(), ATOMIC_MOVE, REPLACE_EXISTING)
+        } catch (_: AtomicMoveNotSupportedException) {
+            Files.move(staging.toPath(), destination.toPath(), REPLACE_EXISTING)
         }
+    } finally {
+        staging.delete()
     }
 }

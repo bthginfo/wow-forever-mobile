@@ -1,15 +1,15 @@
 # WoW Forever Mobile
 
-## Android downloads · .26
+## Android downloads · .27
 
 | APK | Devices |
 | --- | --- |
-| [Standard Android .26](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.26/WoW-Forever-Mobile-2.4.4-mobile.26-Standard.apk) | Snapdragon 8 series with Adreno 7xx or 8xx |
-| [Pixel .26](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.26/WoW-Forever-Mobile-2.4.4-mobile.26-Pixel.apk) | Pixel 9 and 10 families and the original Pixel Fold (2023) |
+| [Standard Android .27](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.27/WoW-Forever-Mobile-2.4.4-mobile.27-Standard.apk) | Snapdragon 8 series with Adreno 7xx or 8xx |
+| [Pixel .27](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.27/WoW-Forever-Mobile-2.4.4-mobile.27-Pixel.apk) | Pixel 9 and 10 families and the original Pixel Fold (2023) |
 
-**Android 10+ · ARM64** · [.26 release](https://github.com/bthginfo/wow-forever-mobile/releases/tag/v2.4.4-mobile.26)
+**Android 10+ · ARM64** · [.27 release](https://github.com/bthginfo/wow-forever-mobile/releases/tag/v2.4.4-mobile.27)
 
-**Coming from .24?** The new signing certificate requires a one-time reinstall. Follow the steps below to reuse your existing WoW folder.
+**Coming from .26?** The .27 signing certificate requires a one-time reinstall. Follow the steps below to reuse your existing WoW folder.
 
 An Android launcher and touch interface for Blizzard’s Windows ARM64 WoW Forever client. The launcher runs the client on the phone using Wine/Proton. It includes a browser-based Battle.net login, Android keyboard and clipboard controls, and a configurable in-game touch HUD.
 
@@ -56,9 +56,9 @@ The launcher downloads the matching `_forever_/Wow-ARM64.exe` from Blizzard when
 
 ### Update an existing installation
 
-If you already have .25, install the matching .26 APK as an update.
+Install a matching APK signed with the same key over the existing Android launcher. Keep using the same WoW folder. It holds `_forever_/WTF`, which contains your character's arc layout and chat size.
 
-When moving from .24 or an earlier Preview with the same app ID, back up `_forever_/WTF` in your WoW folder and keep the game folder. Uninstall the old launcher and install the matching .26 APK. Open **Find existing game files** and select that folder. You will set your launcher preferences again.
+Version .27 switched signing keys. To move from .26 or another build with a different key, back up `_forever_/WTF` before uninstalling. Keep your WoW folder and select it under **Find existing game files** after installing.
 
 ### Pixel graphics profiles
 
@@ -84,7 +84,7 @@ The Pixel build checks Direct3D 11 before opening Battle.net sign-in. If the gra
 | Right camera area | Drag to turn the camera |
 | Jump | Right-side shortcut |
 | Target, Interact | Right-side shortcuts on phones and left-side shortcuts in the tablet layout |
-| Chat / Write | Opens chat with the Android keyboard. The chat toolbar includes Paste and Send. |
+| Chat | Shows or hides the compact chat beside the minimap |
 | Bags, Map, Character | Opens the corresponding WoW panel |
 | Talents, Quests, Spellbook | Opens the corresponding WoW panel |
 | Toolbar arrow | Minimizes the toolbar to one button. Tap it to show the shortcuts again. |
@@ -110,13 +110,13 @@ Arc edits apply as soon as you make them. Tap **Done** or use Android Back to cl
 
 To bind a learned entry such as Smelting or Fishing, open **More controls → Edit skills**, tap **+** and choose **Professions** in the slot picker.
 
-In .24, the **Chat** button sits directly to the left of the minimap. Tap it to show or hide the chat. A red dot on the collapsed button signals an incoming whisper. Open the chat to clear it. Use **Write** in the toolbar to bring up the keyboard.
+### Mobile chat in the .28 source
 
-### Chat in the .27 source
+Tap **Chat** beside the minimap to show or hide the transparent window. Drag the lower-left handle or tap it to cycle through three sizes. WoW saves the size per character.
 
-Tap **Chat** beside the minimap to show or hide the translucent window. Drag the lower-left corner to resize it, or tap that corner to step through three sizes. The size is saved per character.
+The small pencil opens the keyboard. The expand button beside it opens full chat with group, raid and guild filters, separate whisper conversations, and a **Friends** tab. A red dot signals an unread whisper. Chat history covers the current session.
 
-**Message…** in the mobile toolbar opens the system keyboard. **Full chat** opens the conversation view with filters for all messages, whispers, party, raid and guild. Select a contact to open their conversation and reply there. The red dot signals an unread whisper. The new view shows messages from the current session.
+Arc edits use the game's saved variables. At launch the app keeps a copy of saved Forever Touch profiles in `_forever_/WTF/.forever-touch` and recovers missing or empty profile files when a copy is available. Wait for **Arc layout saved** or log out of WoW normally before closing the app.
 
 ### Tablets and fullscreen
 
@@ -153,7 +153,7 @@ The APK is written to `app/build/outputs/apk/modern/release/`. The runtime downl
 
 A local release signing configuration can be provided in `app/keystores/keystore.properties`. Keep keystores and passwords outside version control. The default Gradle build uses application ID `app.wowforever.mobile.browser`.
 
-For an update to the .26 Standard APK, add `-PforeverStandalone=true -PforeverPreview=true` to the Gradle command. For the .26 Pixel APK, add `-PforeverPixelVulkanTest=true -PforeverPreview=true`. Both updates require the signing key used for .26.
+For the Standard APK with the same app ID as .27, add `-PforeverStandalone=true -PforeverPreview=true` to the Gradle command. For the matching Pixel APK, add `-PforeverPixelVulkanTest=true -PforeverPreview=true`. Both updates require the signing key used for .27.
 
 Before building Pixel, run `bash tools/dxvk-powervr/build.sh DXVK_SOURCE LLVM_MINGW_BIN` with the pinned DXVK checkout and the LLVM-MinGW toolchain. It puts `dxvk-2.4.1-wow-powervr.wcp` in `app/src/pixelTest/assets/bundled_components/`. Check that the Pixel APK contains this archive under `assets/bundled_components/`.
 

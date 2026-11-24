@@ -126,6 +126,7 @@ function CreateFrame(_, name, parent, template)
     return frame
 end
 methods.CreateTexture = function(self, name) return CreateFrame("Texture", name, self) end
+methods.CreateLine = methods.CreateTexture
 methods.CreateMaskTexture = methods.CreateTexture
 methods.CreateFontString = methods.CreateTexture
 
@@ -658,6 +659,39 @@ click("OpenChat")
 assert(entry.chatType == "GUILD")
 entry:ClearFocus()
 IsInGuild = function() return false end
+
+local requests = 0
+C_FriendList = {
+    ShowFriends = function() requests = requests + 1 end,
+    GetNumFriends = function() return 3 end,
+    GetFriendInfoByIndex = function(index)
+        return ({
+            { name = "Offline-Sun", connected = false },
+            { name = "Aria-Sun", connected = true, area = "Elwynn" },
+            { name = secret, connected = true },
+        })[index]
+    end,
+}
+BNGetNumFriends = function() return 1 end
+C_BattleNet = { GetFriendAccountInfo = function()
+    return { bnetAccountID = 70, accountName = "BnetFriend", gameAccountInfo = { isOnline = true } }
+end }
+BNet_GetBNetIDAccount = function(name) return name == "BnetFriend" and 70 end
+click("ChatTabFRIENDS")
+assert(requests == 1)
+assert(frames.ForeverTouchChatContact1.caption.text == "Aria-Sun")
+assert(frames.ForeverTouchChatContact2.caption.text == "BnetFriend")
+assert(frames.ForeverTouchChatContact3.caption.text == "Offline-Sun")
+click("ChatContact1")
+assert(#transcript.lines == 1 and transcript.lines[1]:find("Aria-Sun", 1, true))
+click("ChatContact2")
+click("OpenChat")
+assert(entry.chatType == "BN_WHISPER" and entry.tellTarget == "BnetFriend")
+entry:ClearFocus()
+click("ChatContact3")
+assert(not chatAddon.chat.open(), "an offline friend cannot be selected as a send target")
+C_FriendList, C_BattleNet, BNGetNumFriends, BNet_GetBNetIDAccount = nil, nil, nil, nil
+
 ChatFrame_OpenChat, ChatEdit_GetActiveWindow = nil, nil
 
 click("CompactChat")
@@ -982,4 +1016,13 @@ assert(frames.ForeverTouchRightAction1.attributes.spell == 258
     and not ForeverTouchPreferences.mobileSlots and reloads == 0)
 assert(select(2, GetActionInfo(1)) == 201, "the desktop action still has its original rank")
 
-print("Passed: arc autosave and recovery, saved switches, spell rank upgrades, cooldowns and charges, item counts, event batching, picker paging, professions, chat resizing, channel filters, individual whispers and frame limiting.")
+-- A later launcher can have a newer chat-only profile alongside the older arc backup.
+local older = { revision = 8, mobileSlots = { left = {{ kind = "spell", id = 301 }}, right = {} } }
+local newer = { revision = 9, mobileChatOpen = true, mobileChatSize = { width = .7, height = .37 } }
+login(first, newer, { [first] = older })
+assert(ForeverTouchPreferences.mobileChatOpen and ForeverTouchPreferences.mobileSlots.left[1].id == 301)
+assert(ForeverTouchProfiles[first].mobileSlots.left[1].id == 301)
+login(first, { revision = 10, arcRevision = 10 }, { [first] = older })
+assert(not ForeverTouchPreferences.mobileSlots, "an intentional arc reset survives migration")
+
+print("Passed: arc autosave and upgrade recovery, saved switches, spell rank upgrades, cooldowns and charges, item counts, event batching, picker paging, professions, chat resizing, channel filters, friends, individual whispers and frame limiting.")
