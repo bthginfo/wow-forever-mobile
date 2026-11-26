@@ -178,7 +178,7 @@ A local release signing configuration can be provided in `app/keystores/keystore
 
 `-PforeverEdition=standard` builds `app.wowforever.android` and `-PforeverEdition=pixel` builds `app.wowforever.android.pixel`, the app IDs of the .34 release line. The older flags still reproduce the .27–.33 app IDs: `-PforeverStandalone=true -PforeverPreview=true` for Standard and `-PforeverPixelVulkanTest=true -PforeverPreview=true` for Pixel. Those builds update an installed app only with the key used for .27–.33.
 
-The Pixel edition needs `dxvk-2.4.1-wow-powervr.wcp` in `app/src/pixelTest/assets/bundled_components/`. `tools/fetch_pixel_component.sh` downloads the copy published with the .34 release and checks its digest. To build it yourself, run `bash tools/dxvk-powervr/build.sh DXVK_SOURCE LLVM_MINGW_BIN` with the pinned DXVK checkout and the LLVM-MinGW toolchain. Check that the Pixel APK contains this archive under `assets/bundled_components/`.
+The Pixel edition needs `dxvk-2.4.1-wow-powervr.wcp` in `app/src/pixelTest/assets/bundled_components/`. `tools/fetch_pixel_component.sh` extracts the copy shipped in the .31 Pixel APK and checks its digest. To build it yourself, run `bash tools/dxvk-powervr/build.sh DXVK_SOURCE LLVM_MINGW_BIN` with the pinned DXVK checkout and the LLVM-MinGW toolchain. Check that the Pixel APK contains this archive under `assets/bundled_components/`.
 
 The **Release** workflow builds, tests, signs and publishes both editions. It requires the release key in the repository's Actions secrets, as listed at the top of `.github/workflows/release.yml`.
 

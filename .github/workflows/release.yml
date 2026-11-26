@@ -23,7 +23,7 @@ on:
         description: Release title (defaults to "WoW Forever Mobile <version>")
         required: false
       notes:
-        description: Release notes (Markdown)
+        description: Release notes (Markdown; defaults to release-notes/<version>.md)
         required: false
       prerelease:
         description: Pre-release
@@ -99,7 +99,7 @@ jobs:
             app/src/main/assets/wow-session-bridge.exe
           sha256sum app/src/main/assets/wow-session-bridge.exe
 
-      # The Pixel edition's PowerVR DXVK build (tools/dxvk-powervr) is published with each release.
+      # The Pixel edition's PowerVR DXVK build (tools/dxvk-powervr), taken from the published .31 Pixel APK.
       - name: Fetch the PowerVR DXVK component
         run: tools/fetch_pixel_component.sh
 
@@ -177,9 +177,15 @@ jobs:
           sha=$(git rev-parse HEAD)
           flags=()
           if [ "$PRERELEASE" = "true" ]; then flags+=(--prerelease); else flags+=(--latest); fi
+          if [ -n "$NOTES" ]; then
+            printf '%s\n' "$NOTES" > "$RUNNER_TEMP/notes.md"
+          elif [ -f "release-notes/$version.md" ]; then
+            cp "release-notes/$version.md" "$RUNNER_TEMP/notes.md"
+          else
+            : > "$RUNNER_TEMP/notes.md"
+          fi
           gh release create "$TAG" WoW-Forever-Mobile-*.apk SHA256SUMS \
-            app/src/pixelTest/assets/bundled_components/dxvk-2.4.1-wow-powervr.wcp \
             --target "$sha" \
             --title "${TITLE:-WoW Forever Mobile $version}" \
-            --notes "${NOTES:-}" \
+            --notes-file "$RUNNER_TEMP/notes.md" \
             "${flags[@]}"
