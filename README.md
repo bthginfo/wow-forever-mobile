@@ -1,17 +1,17 @@
 # WoW Forever Mobile
 
-## Android downloads · .31
+## Android downloads · .34
 
 | APK | Devices |
 | --- | --- |
-| [Standard Android .31](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.31/WoW-Forever-Mobile-2.4.4-mobile.31-Standard.apk) | Snapdragon 8 series with Adreno 7xx or 8xx, including the Galaxy S24 Ultra |
-| [Pixel .31](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.31/WoW-Forever-Mobile-2.4.4-mobile.31-Pixel.apk) | Pixel 9 and 10 families and the original Pixel Fold (2023) |
+| [Standard .34](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.34/WoW-Forever-Mobile-2.4.4-mobile.34-Standard.apk) | Snapdragon 8 series with Adreno 7xx or 8xx, including the Galaxy S24 Ultra |
+| [Pixel .34](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.34/WoW-Forever-Mobile-2.4.4-mobile.34-Pixel.apk) | Pixel 9 and 10 families and the original Pixel Fold (2023) |
 
-**Android 10+ · ARM64** · [.31 release](https://github.com/bthginfo/wow-forever-mobile/releases/tag/v2.4.4-mobile.31)
+**Android 10+ · ARM64** · [.34 release](https://github.com/bthginfo/wow-forever-mobile/releases/tag/v2.4.4-mobile.34) · [SHA-256 checksums](https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.34/SHA256SUMS)
 
-**Built-in keyboard preview.** The [.33 Keyboard Preview](https://github.com/bthginfo/wow-forever-mobile/releases/tag/v2.4.4-mobile.33-keyboard-preview) adds an in-app keyboard to chat, Battle.net sign-in and game text fields. Choose Standard or Pixel and install it over the matching .32 Chat Preview or alongside the stable launcher.
+**New in .34.** Longer battery life: the frame limiter no longer keeps a CPU core awake, the display runs at the game's 60 FPS instead of 120 Hz, and the game drops to 10 FPS while the app is in the background. The movement stick now starts anywhere in the lower-left corner and follows your thumb. Jump, Target and Interact respond on touch with haptic feedback, and you can hold Jump to swim or fly upward. .34 also includes the built-in keyboard and the fullscreen chat composer from the .32 and .33 previews.
 
-**Updating from .27–.30?** Install the matching .31 APK over your existing launcher. If you're coming from .26 with the same app ID, follow the update steps to reuse your WoW folder. [Update instructions](#update-an-existing-installation)
+**Coming from .26–.33?** .34 installs as a separate app next to your current launcher because it uses a new signing key. Select your existing WoW folder during setup. Your skill arcs, chat size and WoW settings are stored there. [Move to .34](#move-to-34)
 
 An Android launcher and touch interface for Blizzard’s Windows ARM64 WoW Forever client. The launcher runs the client on the phone using Wine/Proton. It includes a browser-based Battle.net login, Android keyboard and clipboard controls, and a configurable in-game touch HUD.
 
@@ -56,11 +56,22 @@ WoW Forever/
 
 The launcher downloads the matching `_forever_/Wow-ARM64.exe` from Blizzard when needed. A fresh setup downloads the ARM64 client and archive indexes first. WoW caches additional zones and assets as you play.
 
-### Update an existing installation
+### Move to .34
 
-The matching .28 APK uses the same app ID and signing certificate as .27. Install it as an update and keep using your WoW folder.
+.34 starts a new release line with its own app IDs and signing key. Android therefore installs it next to .26–.33 instead of replacing them. Later updates in this line install over .34.
 
-The signing key changed in .27. If Android refuses the update because your installed launcher has the same app ID and a different signing key, back up `_forever_/WTF` and keep your WoW folder before uninstalling the old launcher. Install the matching .28 APK, open **Find existing game files**, and select your WoW folder. Set up your launcher preferences again.
+1. Close the running game in the old launcher.
+2. Install the matching .34 APK and open **WoW Forever Mobile** (or **WoW Forever Mobile Pixel**). Choose your language and allow **All files access**.
+3. Tap **Find existing game files** and select your WoW folder, by default `/storage/emulated/0/WoW Forever/`. The folder holds `_forever_/WTF` with your WoW settings, skill arcs and chat size.
+4. Check **Region** and **Resolution** and start the game. The first start prepares the Wine runtime again. Battle.net may ask you to confirm the sign-in once because the new app counts as a new device.
+5. Move your on-screen controls again if you had changed their positions. The old launcher kept them in its own app data.
+6. Once .34 works, uninstall the old launcher in **Settings → Apps**. The older app shows version .26–.33 under **App info**. Uninstalling it leaves your WoW folder in place.
+
+Keep only one launcher running while it uses the WoW folder.
+
+### Update within the same release line
+
+Install an APK with the same app ID and signing key over the existing app. Keep using the same WoW folder.
 
 ### Pixel graphics profiles
 
@@ -82,21 +93,24 @@ The Pixel build checks Direct3D 11 before opening Battle.net sign-in. If the gra
 
 | Control | What it does |
 | --- | --- |
-| Left stick | Movement |
+| Left stick | Movement. Place your thumb on the stick or anywhere around it in the lower-left corner. The stick base follows the thumb. |
 | Right camera area | Drag to turn the camera |
-| Jump | Right-side shortcut |
-| Target, Interact | Right-side shortcuts on phones and left-side shortcuts in the tablet layout |
-| Chat | Shows or hides the resizable chat beside the minimap. Use the expand button in the chat to open the full conversation view. |
+| Jump | Right-side shortcut. Hold it to keep rising while you swim or fly. |
+| Target, Interact | Right-side shortcuts on phones and left-side shortcuts in the tablet layout. They respond as soon as you touch them. |
+| Chat | Pencil and expand buttons beside the minimap open the chat composer and the fullscreen conversation view |
 | Bags, Map, Character | Opens the corresponding WoW panel |
 | Talents, Quests, Spellbook | Opens the corresponding WoW panel |
 | Toolbar arrow | Minimizes the toolbar to one button. Tap it to show the shortcuts again. |
 | More controls → Edit controls | Moves the sticks, shortcuts, or toolbar |
 | More controls → Edit skills | Assigns spells and usable bag items, swaps slots by dragging, and moves the arcs by their handles |
-| Professions · Social · More controls | In the preview, Professions opens directly, Social contains Friends, Guild and Group Finder, and More controls contains Collections. In .21 all five panels are under More controls. |
+| Professions · Social | Professions opens directly. Social contains Friends, Guild and Group Finder. Collections is under More controls. |
+| More controls → Battery saver (30 FPS) | Limits WoW to 30 FPS. Choose it again to restore your previous limit. |
 | More controls → Camera sensitivity | Sets how quickly the camera turns |
 | More controls → Enter or exit fullscreen | Hides or shows the Android status and navigation bars |
-| More controls → Text input | Opens the Android keyboard and paste controls for the game |
+| Keyboard · Paste | Before you switch to Play controls, the toolbar opens the built-in keyboard or pastes the clipboard into the game |
 | Set button | Cycles through your skill arc sets once you have created a second set |
+
+Buttons give a short haptic tick when you touch them. They follow Android's **Touch feedback** setting.
 
 The touch overlay translates Android gestures into keyboard and mouse input for the game window. Forever Touch reads populated action slots and keeps a separate touch layout for each character. Use **Edit skills** to set up the mobile spell and item buttons.
 
@@ -126,6 +140,13 @@ The app selects the tablet layout when both dimensions of the app window are at 
 
 Fullscreen is on by default. Open **More controls** in the game toolbar to enter or exit fullscreen. WoW fits the landscape window at the selected render budget when the session starts. If you resize the window during play, the game preserves its proportions. Start a new session to fit the new aspect ratio.
 
+## Battery and performance
+
+- **Display rate.** During play the launcher asks Android for a display rate that matches the game's 60 FPS cap, typically 60 Hz instead of 120 Hz. On Android 15 and later it also turns off the boost to the maximum rate that every touch would trigger.
+- **Background.** WoW keeps running while you switch apps, so the Battle.net session and Authenticator sign-in stay connected. While the app isn't visible, the game is limited to 10 FPS. The previous limit returns when you come back.
+- **Frame limiter.** The limiter that paces WoW's frames sleeps until the next frame is due. Earlier versions checked the time every half millisecond and kept a CPU core busy.
+- **Battery saver.** **More controls → Battery saver (30 FPS)** halves the frame rate for long sessions. A lower **Resolution** in the launcher also reduces GPU load.
+
 ## Sign-in and connection
 
 - **Play World of Warcraft** takes you to the Battle.net browser sign-in. The launcher keeps the sign-in page available while you switch to the Battle.net app for the Authenticator.
@@ -141,19 +162,25 @@ Fullscreen is on by default. Open **More controls** in the game toolbar to enter
 
 ## Build from source
 
-The release tag contains the source for both .31 APKs. [Source for .31](https://github.com/bthginfo/wow-forever-mobile/tree/v2.4.4-mobile.31)
+The release tag contains the source for both .34 APKs. [Source for .34](https://github.com/bthginfo/wow-forever-mobile/tree/v2.4.4-mobile.34)
 
 Use JDK 17, Android SDK Platform 36, build-tools 35.0.0, and NDK 27.3.13750724. Point `local.properties` at your Android SDK. For a fresh checkout, build the ARM64 Wine login helper into `app/src/main/assets/wow-session-bridge.exe`. [Helper build and test instructions](tools/wow-session-bridge/README.md)
 
 ```bash
 tools/fetch_components.sh
 python3 tools/trim_proton_i386.py app/src/main/assets/bundled_components/proton-11.0-90624-arm64ec.wcp
-./gradlew :app:assembleModernRelease :app:testModernReleaseUnitTest
+./gradlew -PforeverEdition=standard :app:assembleModernRelease :app:testModernReleaseUnitTest
 ```
 
 The APK is written to `app/build/outputs/apk/modern/release/`. The runtime download script verifies each component against `tools/components.sha256`.
 
 A local release signing configuration can be provided in `app/keystores/keystore.properties`. Keep keystores and passwords outside version control. The default Gradle build uses application ID `app.wowforever.mobile.browser`.
+
+`-PforeverEdition=standard` builds `app.wowforever.android` and `-PforeverEdition=pixel` builds `app.wowforever.android.pixel`, the app IDs of the .34 release line. The older flags still reproduce the .27–.33 app IDs: `-PforeverStandalone=true -PforeverPreview=true` for Standard and `-PforeverPixelVulkanTest=true -PforeverPreview=true` for Pixel. Those builds update an installed app only with the key used for .27–.33.
+
+The Pixel edition needs `dxvk-2.4.1-wow-powervr.wcp` in `app/src/pixelTest/assets/bundled_components/`. `tools/fetch_pixel_component.sh` extracts the copy shipped in the .31 Pixel APK and checks its digest. To build it yourself, run `bash tools/dxvk-powervr/build.sh DXVK_SOURCE LLVM_MINGW_BIN` with the pinned DXVK checkout and the LLVM-MinGW toolchain. Check that the Pixel APK contains this archive under `assets/bundled_components/`.
+
+The **Release** workflow builds, tests, signs and publishes both editions. It requires the release key in the repository's Actions secrets, as listed at the top of `.github/workflows/release.yml`.
 
 ---
 
