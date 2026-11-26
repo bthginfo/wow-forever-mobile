@@ -1,11 +1,12 @@
-# Builds the release APK, signs it with the release key from the repository's Actions secrets, and publishes it as a
-# GitHub release. Run by hand (Actions tab, or the API) only; nothing triggers it automatically.
+# Builds the Standard and Pixel APKs, signs them with the release key from the repository's Actions secrets, and
+# publishes both as one GitHub release. Run by hand (Actions tab, or the API) only; nothing triggers it automatically.
 #
-# Secrets (Settings > Secrets and variables > Actions):
+# Secrets (Settings > Secrets and variables > Actions), for the key that signs the .34 release line:
 #   RELEASE_KEYSTORE_BASE64  the keystore file, base64-encoded (base64 -w0 release.jks, or base64 -i release.jks on macOS)
 #   RELEASE_STORE_PASSWORD   the keystore password
 #   RELEASE_KEY_ALIAS        the key alias
 #   RELEASE_KEY_PASSWORD     the key password
+#   RELEASE_CERT_SHA256      optional: the expected signer certificate SHA-256 digest (lowercase hex, no colons)
 name: Release
 
 on:
@@ -16,18 +17,18 @@ on:
         required: true
         default: main
       tag:
-        description: Release tag to create, e.g. v2.4.2 or v2.4.1-test1
+        description: Release tag to create, e.g. v2.4.4-mobile.35
         required: true
       title:
-        description: Release title (defaults to "WoW Forever for Android <tag>")
+        description: Release title (defaults to "WoW Forever Mobile <version>")
         required: false
       notes:
         description: Release notes (Markdown)
         required: false
       prerelease:
-        description: Pre-release (test builds; the in-app updater ignores these)
+        description: Pre-release
         type: boolean
-        default: true
+        default: false
 
 permissions:
   contents: write
@@ -39,7 +40,7 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
         with:
@@ -62,7 +63,7 @@ jobs:
         env:
           TAG: ${{ inputs.tag }}
         run: |
-          version=$(sed -n 's/^ *versionName = "\(.*\)"/\1/p' app/build.gradle.kts)
+          version=$(sed -n 's/.*versionName = if (pixelVulkanTestBuild) "[^"]*" else "\(.*\)"/\1/p' app/build.gradle.kts)
           if [ "v$version" != "$TAG" ]; then
             echo "::error::versionName is $version but the tag is $TAG"
             exit 1
@@ -84,26 +85,29 @@ jobs:
 
       # The browser-login helper ships only as built here from the reviewed source, never as a committed binary.
       - name: Build the browser-login helper
-        if: hashFiles('tools/wow-session-bridge/build.sh') != ''
         env:
           LLVM_MINGW: llvm-mingw-20261104-ucrt-ubuntu-22.04-x86_64
           LLVM_MINGW_SHA256: 919380403de87dca3c581c2053230cd298af5e891286628ba0613b7fed370926
         run: |
           # The helper runs next to the ARM64 game, so it is an ARM64 Windows program; GCC's MinGW can't target that.
-          curl -fsSL -o "$RUNNER_TEMP/llvm-mingw.tar.xz" \
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/llvm-mingw.tar.xz" \
             "https://github.com/mstorsjo/llvm-mingw/releases/download/20261104/$LLVM_MINGW.tar.xz"
           echo "$LLVM_MINGW_SHA256  $RUNNER_TEMP/llvm-mingw.tar.xz" | sha256sum -c -
           tar -xJf "$RUNNER_TEMP/llvm-mingw.tar.xz" -C "$RUNNER_TEMP"
+          sh tools/wow-session-bridge/test.sh
           sh tools/wow-session-bridge/build.sh "$RUNNER_TEMP/$LLVM_MINGW/bin/aarch64-w64-mingw32-clang" \
             app/src/main/assets/wow-session-bridge.exe
           sha256sum app/src/main/assets/wow-session-bridge.exe
+
+      # The Pixel edition's PowerVR DXVK build (tools/dxvk-powervr) is published with each release.
+      - name: Fetch the PowerVR DXVK component
+        run: tools/fetch_pixel_component.sh
 
       # The Secrets Gradle plugin refuses to configure the project without local.properties.
       - name: Write local.properties
         run: echo "sdk.dir=$ANDROID_HOME" > local.properties
 
       - name: Set up signing
-        id: signing
         env:
           KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
           STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
@@ -111,8 +115,8 @@ jobs:
           KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
         run: |
           if [ -z "$KEYSTORE_BASE64" ]; then
-            echo "::warning::Release signing is unavailable. This run will compile a debug-signed APK for validation."
-            exit 0
+            echo "::error::RELEASE_KEYSTORE_BASE64 is not set. Releases must be signed with the release key."
+            exit 1
           fi
           mkdir -p app/keystores
           echo "$KEYSTORE_BASE64" | base64 -d > app/keystores/release.jks
@@ -122,41 +126,40 @@ jobs:
             echo "keyAlias=$KEY_ALIAS"
             echo "keyPassword=$KEY_PASSWORD"
           } > app/keystores/keystore.properties
-          echo "configured=true" >> "$GITHUB_OUTPUT"
 
-      - name: Build
-        run: ./gradlew --no-daemon :app:assembleModernRelease
-
-      - name: Upload debug-signed APK for validation
-        if: steps.signing.outputs.configured != 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: Android-build-debug-signed
-          path: app/build/outputs/apk/modern/release/app-modern-release.apk
-          if-no-files-found: error
-
-      - name: Verify the signature
-        if: steps.signing.outputs.configured == 'true'
+      - name: Build and test both editions
         env:
           TAG: ${{ inputs.tag }}
         run: |
-          apk=app/build/outputs/apk/modern/release/app-modern-release.apk
-          apksigner="$ANDROID_HOME/build-tools/35.0.0/apksigner"
-          "$apksigner" verify --print-certs "$apk" | tee certs.txt
-          if grep -q "CN=Android Debug" certs.txt; then echo "::error::APK is debug-signed"; exit 1; fi
-          if [ "$TAG" = "v2.4.4-mobile.16" ]; then
-            previous="$RUNNER_TEMP/WoW-Forever-Mobile-2.4.4-mobile.15.apk"
-            curl -fsSL --retry 3 -o "$previous" \
-              https://github.com/bthginfo/wow-forever-mobile/releases/download/v2.4.4-mobile.15/WoW-Forever-Mobile-2.4.4-mobile.15.apk
-            digest_pattern='^Signer #[0-9]+ certificate SHA-256 digest: '
-            expected=$("$apksigner" verify --print-certs "$previous" | grep "$digest_pattern")
-            actual=$(grep "$digest_pattern" certs.txt)
-            if [ "$expected" != "$actual" ]; then
-              echo "::error::The APK was signed with a different key than the .15 APK."
+          version=${TAG#v}
+          out=app/build/outputs/apk/modern/release/app-modern-release.apk
+          ./gradlew --no-daemon -PforeverEdition=standard :app:assembleModernRelease :app:testModernReleaseUnitTest
+          cp "$out" "WoW-Forever-Mobile-$version-Standard.apk"
+          ./gradlew --no-daemon -PforeverEdition=pixel :app:assembleModernRelease
+          cp "$out" "WoW-Forever-Mobile-$version-Pixel.apk"
+
+      - name: Verify the APKs
+        env:
+          TAG: ${{ inputs.tag }}
+          EXPECTED_CERT: ${{ secrets.RELEASE_CERT_SHA256 }}
+        run: |
+          tools="$ANDROID_HOME/build-tools/35.0.0"
+          version=${TAG#v}
+          for edition in Standard Pixel; do
+            apk="WoW-Forever-Mobile-$version-$edition.apk"
+            "$tools/apksigner" verify --print-certs "$apk" | tee certs.txt
+            if grep -q "CN=Android Debug" certs.txt; then echo "::error::$apk is debug-signed"; exit 1; fi
+            if [ -n "$EXPECTED_CERT" ] && ! grep -qi "certificate SHA-256 digest: $EXPECTED_CERT" certs.txt; then
+              echo "::error::$apk is not signed with the expected release key"
               exit 1
             fi
-          fi
-          cp "$apk" "WoW-Forever-Mobile-${TAG#v}.apk"
+            for source in app/src/main/assets/ForeverTouch/*; do
+              unzip -p "$apk" "assets/ForeverTouch/${source##*/}" | cmp "$source" -
+            done
+          done
+          unzip -l "WoW-Forever-Mobile-$version-Pixel.apk" | grep -q "assets/bundled_components/dxvk-2.4.1-wow-powervr.wcp"
+          sha256sum WoW-Forever-Mobile-*.apk > SHA256SUMS
+          cat SHA256SUMS
 
       - name: Remove signing files
         if: always()
@@ -169,17 +172,14 @@ jobs:
           TITLE: ${{ inputs.title }}
           NOTES: ${{ inputs.notes }}
           PRERELEASE: ${{ inputs.prerelease }}
-          SIGNED: ${{ steps.signing.outputs.configured }}
         run: |
-          if [ "$SIGNED" != "true" ]; then
-            echo "::error::Release signing is required to publish an APK that can update the existing app."
-            exit 1
-          fi
+          version=${TAG#v}
           sha=$(git rev-parse HEAD)
           flags=()
           if [ "$PRERELEASE" = "true" ]; then flags+=(--prerelease); else flags+=(--latest); fi
-          gh release create "$TAG" "WoW-Forever-Mobile-${TAG#v}.apk" \
+          gh release create "$TAG" WoW-Forever-Mobile-*.apk SHA256SUMS \
+            app/src/pixelTest/assets/bundled_components/dxvk-2.4.1-wow-powervr.wcp \
             --target "$sha" \
-            --title "${TITLE:-WoW Forever for Android $TAG}" \
+            --title "${TITLE:-WoW Forever Mobile $version}" \
             --notes "${NOTES:-}" \
             "${flags[@]}"

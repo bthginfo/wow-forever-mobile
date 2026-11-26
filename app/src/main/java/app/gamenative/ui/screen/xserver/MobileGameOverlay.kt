@@ -402,7 +402,7 @@ internal fun BoxScope.MobileGameOverlay(
             val end = minOf(gameWidth * .28f, gameHeight * .34f) + maxOf(gameWidth * .045f, gameHeight * .14f) +
                 gameHeight * .01f
             val center = gameHeight * .191f
-            val height = 35.dp
+            val height = 40.dp
             val halfHeight = with(density) { height.toPx() / 2 }
             val x = maxOf(end, right)
             val y = maxOf(center - halfHeight, top)
@@ -492,8 +492,8 @@ internal fun BoxScope.MobileGameOverlay(
 
 @Composable
 private fun ChatDockButton(label: Int, icon: ImageVector, compact: Boolean = false, onClick: () -> Unit) {
-    IconButton(onClick = onClick, modifier = Modifier.size(if (compact) 35.dp else 44.dp)) {
-        Icon(icon, stringResource(label), modifier = Modifier.size(if (compact) 16.dp else 19.dp))
+    IconButton(onClick = onClick, modifier = Modifier.size(if (compact) 40.dp else 44.dp)) {
+        Icon(icon, stringResource(label), modifier = Modifier.size(if (compact) 18.dp else 19.dp))
     }
 }
 
@@ -590,52 +590,66 @@ private fun BoxScope.MobileControlSurface(controls: MobileTouchControls, layout:
     val jumpLabel = stringResource(R.string.mobile_jump)
     val targetLabel = stringResource(R.string.mobile_target)
     val interactLabel = stringResource(R.string.mobile_interact)
+    // Measured once per label set: the canvas redraws for every stick movement, which should only move shapes.
+    val shortcutText = remember(measurer, jumpLabel, targetLabel, interactLabel) {
+        val style = TextStyle(color = overlayText, fontSize = 12.sp, textAlign = TextAlign.Center)
+        mapOf(
+            MobileShortcut.Jump to measurer.measure("↑\n$jumpLabel", style),
+            MobileShortcut.Target to measurer.measure(targetLabel, style),
+            MobileShortcut.Interact to measurer.measure(interactLabel, style),
+        )
+    }
+    val cameraText = remember(measurer, cameraLabel) {
+        measurer.measure("↔  $cameraLabel", TextStyle(color = overlayText.copy(alpha = .84f), fontSize = 11.sp))
+    }
 
     Canvas(Modifier.matchParentSize()) {
         if (layout.stick.width <= 0f) return@Canvas
         val radius = layout.stick.width / 2f
+        val zone = layout.stickZone
+        // The base follows the thumb within the stick's touch area, so a slightly missed touch still feels centered.
         val center = controls.stickAnchor?.let {
             val inset = radius * .70f
+            val bounds = if (zone.width > inset * 2f && zone.height > inset * 2f) zone else layout.stick
             Offset(
-                it.x.coerceIn(layout.stick.left + inset, layout.stick.right - inset),
-                it.y.coerceIn(layout.stick.top + inset, layout.stick.bottom - inset),
+                it.x.coerceIn(bounds.left + inset, bounds.right - inset),
+                it.y.coerceIn(bounds.top + inset, bounds.bottom - inset),
             )
         } ?: layout.stick.center
         val outline = Stroke(1.dp.toPx())
         val rim = if (editing) overlayAccent else overlayBorder
+        val active = controls.stickAnchor != null
         drawCircle(
             brush = Brush.radialGradient(listOf(Color(0x861A140D), Color(0xC21D1911)), center, radius),
             radius = radius,
             center = center,
+            alpha = if (active) 1f else .86f,
         )
-        drawCircle(rim, radius, center, style = outline)
+        drawCircle(if (active) overlayAccent.copy(alpha = .9f) else rim, radius, center, style = outline)
         drawCircle(rim.copy(alpha = .28f), radius * .88f, center, style = outline)
         drawCircle(
-            color = overlayAccent.copy(alpha = .72f),
+            color = overlayAccent.copy(alpha = if (active) .9f else .72f),
             radius = radius * .36f,
             center = center + controls.stickPosition * (radius * .53f),
         )
-        val labels = mapOf(MobileShortcut.Jump to jumpLabel, MobileShortcut.Target to targetLabel, MobileShortcut.Interact to interactLabel)
+        val pressed = controls.pressedShortcuts
         for ((shortcut, bounds) in layout.shortcuts) {
             val rounding = CornerRadius(bounds.height / 2f)
+            val down = shortcut in pressed
             drawRoundRect(
-                overlayBackground.copy(alpha = .76f),
+                if (down) overlayAccent.copy(alpha = .42f) else overlayBackground.copy(alpha = .76f),
                 topLeft = bounds.topLeft,
                 size = bounds.size,
                 cornerRadius = rounding,
             )
             drawRoundRect(
-                rim,
+                if (down) overlayAccent else rim,
                 topLeft = bounds.topLeft,
                 size = bounds.size,
                 cornerRadius = rounding,
                 style = outline,
             )
-            val label = labels.getValue(shortcut)
-            val text = measurer.measure(
-                if (shortcut == MobileShortcut.Jump) "↑\n$label" else label,
-                TextStyle(color = overlayText, fontSize = 12.sp, textAlign = TextAlign.Center),
-            )
+            val text = shortcutText.getValue(shortcut)
             drawText(text, topLeft = bounds.center - Offset(text.size.width / 2f, text.size.height / 2f))
         }
         val cameraCorner = CornerRadius(layout.camera.height * .36f)
@@ -645,8 +659,7 @@ private fun BoxScope.MobileControlSurface(controls: MobileTouchControls, layout:
             size = layout.camera.size,
             cornerRadius = cameraCorner,
         )
-        val cameraMark = measurer.measure("↔  $cameraLabel", TextStyle(color = overlayText.copy(alpha = .84f), fontSize = 11.sp))
-        drawText(cameraMark, topLeft = layout.camera.center - Offset(cameraMark.size.width / 2f, cameraMark.size.height / 2f))
+        drawText(cameraText, topLeft = layout.camera.center - Offset(cameraText.size.width / 2f, cameraText.size.height / 2f))
         drawRoundRect(
             if (controls.cameraHeld) overlayAccent else rim,
             topLeft = layout.camera.topLeft,

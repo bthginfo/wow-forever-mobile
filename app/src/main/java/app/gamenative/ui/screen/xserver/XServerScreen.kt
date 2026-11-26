@@ -548,7 +548,8 @@ internal fun XServerScreen(
                     mobileControls.useLoginControls()
                 }
                 loginObservation = latest
-                delay(1_200L)
+                // In the world only a return to the login screen matters, so check less often.
+                delay(if (mobileControls.playing) 4_000L else 1_200L)
             }
         }
     }
@@ -789,6 +790,26 @@ internal fun XServerScreen(
             fpsLimiterTarget = clampedTarget
         }
         applyFpsLimiterToEngines(effectiveFpsLimit())
+    }
+
+    // The client keeps running while hidden so it holds its Battle.net session (suspendPolicy=never). It doesn't
+    // need full frame rate then: cap it while the app is not visible and restore the cap when it returns.
+    DisposableEffect(lifecycleOwner, xServerView) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_STOP -> applyFpsLimiterToEngines(backgroundFrameLimit(effectiveFpsLimit()))
+                Lifecycle.Event.ON_START -> applyFpsLimiterToEngines(effectiveFpsLimit())
+                else -> Unit
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
+    // Match the panel to the frame cap instead of the panel's maximum, for example 60 Hz instead of 120 Hz.
+    DisposableEffect(activity, fpsLimiterEnabled, fpsLimiterTarget) {
+        val restore = activity?.window?.preferGameFrameRate(effectiveFpsLimit())
+        onDispose { restore?.invoke() }
     }
 
     fun restorePerformanceHudPosition() {

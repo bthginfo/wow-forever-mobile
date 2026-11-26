@@ -18,9 +18,13 @@ val keystoreProperties: Properties? = if (keystorePropertiesFile.exists()) {
         load(FileInputStream(keystorePropertiesFile))
     }
 } else null
+// -PforeverEdition=standard|pixel builds the release line that started with .34. It has its own app IDs and signing
+// key, so it installs next to the earlier apps. The older flags below still reproduce the .26-.33 app IDs.
+val edition = providers.gradleProperty("foreverEdition").orNull
+require(edition == null || edition == "standard" || edition == "pixel") { "foreverEdition must be standard or pixel" }
 val standaloneBuild = providers.gradleProperty("foreverStandalone").orNull == "true"
-val previewBuild = providers.gradleProperty("foreverPreview").orNull == "true"
-val pixelVulkanTestBuild = providers.gradleProperty("foreverPixelVulkanTest").orNull == "true"
+val previewBuild = edition == null && providers.gradleProperty("foreverPreview").orNull == "true"
+val pixelVulkanTestBuild = edition == "pixel" || providers.gradleProperty("foreverPixelVulkanTest").orNull == "true"
 
 android {
     namespace = "app.gamenative"
@@ -42,6 +46,8 @@ android {
 
     defaultConfig {
         applicationId = when {
+            edition == "pixel" -> "app.wowforever.android.pixel"
+            edition == "standard" -> "app.wowforever.android"
             pixelVulkanTestBuild -> "app.wowforever.mobile.pixeltest"
             standaloneBuild -> "app.wowforever.mobile.standalone"
             else -> "app.wowforever.mobile.browser"
@@ -54,6 +60,8 @@ android {
 
         manifestPlaceholders["screenOrientation"] = "unspecified"
         manifestPlaceholders["mobileAppLabel"] = when {
+            edition == "pixel" -> "WoW Forever Mobile Pixel"
+            edition == "standard" -> "@string/mobile_app_name"
             previewBuild && pixelVulkanTestBuild -> "WoW Forever Mobile Pixel"
             previewBuild -> "@string/mobile_app_name"
             pixelVulkanTestBuild -> "WoW Forever Mobile Pixel Test"
@@ -63,8 +71,8 @@ android {
         buildConfigField("boolean", "XR_BUILD", "false")
         buildConfigField("boolean", "PIXEL_VULKAN_TEST", pixelVulkanTestBuild.toString())
 
-        versionCode = if (pixelVulkanTestBuild) 282 else 278
-        versionName = if (pixelVulkanTestBuild) "2.4.4-mobile.33-pixel.1" else "2.4.4-mobile.33"
+        versionCode = if (pixelVulkanTestBuild) 283 else 279
+        versionName = if (pixelVulkanTestBuild) "2.4.4-mobile.34-pixel.1" else "2.4.4-mobile.34"
 
         buildConfigField("boolean", "GOLD", "false")
         val iconValue = "@mipmap/ic_launcher"

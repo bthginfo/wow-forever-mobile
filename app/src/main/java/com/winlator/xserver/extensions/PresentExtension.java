@@ -14,6 +14,7 @@ import com.winlator.xconnector.XOutputStream;
 import com.winlator.xconnector.XStreamLock;
 import com.winlator.xenvironment.components.VortekRendererComponent;
 import com.winlator.xserver.Bitmask;
+import com.winlator.xserver.DeadlinePacer;
 import com.winlator.xserver.Drawable;
 import com.winlator.xserver.Pixmap;
 import com.winlator.xserver.Window;
@@ -73,10 +74,9 @@ public class PresentExtension implements Extension {
     private volatile boolean choreographerChecked = false;
     private final Object choreographerLock = new Object();
 
-    private Thread cpuPacerThread = null;
-    private final java.util.concurrent.PriorityBlockingQueue<PendingIdle> cpuQueue =
-            new java.util.concurrent.PriorityBlockingQueue<>(11,
-                    java.util.Comparator.comparingLong(p -> p.targetNs));
+    // Releases paced pixmaps when no Choreographer is available, which is the case on the X client threads.
+    private final DeadlinePacer<PendingIdle> cpuPacer = new DeadlinePacer<>("PresentPacer-CPU",
+            p -> sendIdleNotify(p.window, p.pixmap, p.serial, p.idleFence));
 
     private static final long FIRE_EARLY_NS = 700_000L; // 0.7 ms
 
@@ -85,10 +85,7 @@ public class PresentExtension implements Extension {
     }
 
     public void close() {
-        if (cpuPacerThread != null) {
-            cpuPacerThread.interrupt();
-            cpuPacerThread = null;
-        }
+        cpuPacer.close();
     }
 
     private android.view.Choreographer tryGetChoreographer(VulkanRenderer renderer) {
@@ -103,39 +100,8 @@ public class PresentExtension implements Extension {
             } catch (Exception ignored) {
                 android.util.Log.w("PresentExtension", "Choreographer unavailable, using CPU pacer");
             }
-            if (choreographer == null) {
-                startCpuPacer();
-            }
             return choreographer;
         }
-    }
-
-    private void startCpuPacer() {
-        if (cpuPacerThread != null) return;
-        cpuPacerThread = new Thread(() -> {
-            while (!Thread.interrupted()) {
-                PendingIdle p = cpuQueue.peek();
-                if (p == null) {
-                    java.util.concurrent.locks.LockSupport.parkNanos(500_000L);
-                    continue;
-                }
-                long now = System.nanoTime();
-                if (now >= p.targetNs) {
-                    if (cpuQueue.remove(p)) {
-                        sendIdleNotify(p.window, p.pixmap, p.serial, p.idleFence);
-                    }
-                } else {
-                    long diff = p.targetNs - now;
-                    if (diff > 2_000_000L)
-                        java.util.concurrent.locks.LockSupport.parkNanos(1_000_000L);
-                    else
-                        Thread.yield();
-                }
-            }
-        }, "PresentPacer-CPU");
-        cpuPacerThread.setDaemon(true);
-        cpuPacerThread.setPriority(Thread.MAX_PRIORITY);
-        cpuPacerThread.start();
     }
 
     private volatile boolean choreographerPosted = false;
@@ -204,13 +170,9 @@ public class PresentExtension implements Extension {
             postChoreographerCallback();
         } else {
             if (eagerIdleRelease) {
-                for (PendingIdle q : cpuQueue) {
-                    if (q.window == window && cpuQueue.remove(q)) {
-                        sendIdleNotify(q.window, q.pixmap, q.serial, q.idleFence);
-                    }
-                }
+                cpuPacer.releaseMatching(q -> q.window == window);
             }
-            cpuQueue.offer(new PendingIdle(window, pixmap, serial, idleFence, fireTime, 0));
+            cpuPacer.schedule(new PendingIdle(window, pixmap, serial, idleFence, fireTime, 0), fireTime);
         }
     }
 

@@ -1,5 +1,6 @@
 package app.gamenative.ui.screen.xserver
 
+import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.ViewConfiguration
 import androidx.compose.runtime.getValue
@@ -23,6 +24,8 @@ internal class MobileTouchControls(private val touchSlop: Float) {
     var stickAnchor by mutableStateOf<Offset?>(null)
         private set
     var cameraHeld by mutableStateOf(false)
+        private set
+    var pressedShortcuts by mutableStateOf(emptySet<MobileShortcut>())
         private set
     var chatting by mutableStateOf(false)
         private set
@@ -203,7 +206,7 @@ internal class MobileTouchControls(private val touchSlop: Float) {
         gamePointers.clear()
         stickId = NO_POINTER
         cameraId = NO_POINTER
-        shortcutPointers.clear()
+        for (pointer in shortcutPointers.keys.toList()) releaseShortcut(pointer)
         cameraStarted = false
     }
 
@@ -270,10 +273,7 @@ internal class MobileTouchControls(private val touchSlop: Float) {
                 if (event.actionMasked == MotionEvent.ACTION_DOWN) releaseAll()
                 when {
                     geometry.stick.contains(position) -> {
-                        if (stickId == NO_POINTER) {
-                            stickId = pointerId
-                            stickAnchor = position
-                        }
+                        if (stickId == NO_POINTER) beginStick(pointerId, position)
                     }
                     geometry.camera.contains(position) -> {
                         if (cameraId == NO_POINTER) {
@@ -285,13 +285,16 @@ internal class MobileTouchControls(private val touchSlop: Float) {
                     }
                     else -> {
                         val shortcut = geometry.shortcutAt(position)
-                        if (shortcut != null) {
-                            shortcutPointers[pointerId] = shortcut
-                        } else {
-                            // Release right-drag before clicking a different target or UI button.
-                            stopCamera()
-                            gamePointers.add(pointerId)
-                            forward(event)
+                        when {
+                            shortcut != null -> pressShortcut(pointerId, shortcut)
+                            // A thumb that lands just beside the stick moves instead of clicking the world.
+                            stickId == NO_POINTER && geometry.stickZone.contains(position) -> beginStick(pointerId, position)
+                            else -> {
+                                // Release right-drag before clicking a different target or UI button.
+                                stopCamera()
+                                gamePointers.add(pointerId)
+                                forward(event)
+                            }
                         }
                     }
                 }
@@ -319,11 +322,8 @@ internal class MobileTouchControls(private val touchSlop: Float) {
                         }
                     }
                     else -> {
-                        val shortcut = shortcutPointers.remove(pointerId)
-                        if (shortcut != null && event.flags and MotionEvent.FLAG_CANCELED == 0 &&
-                            geometry.shortcutAt(position) == shortcut
-                        ) {
-                            tap(shortcut.key, shortcut.modified)
+                        if (pointerId in shortcutPointers) {
+                            releaseShortcut(pointerId)
                         } else if (pointerId in gamePointers) {
                             forward(event)
                             gamePointers.remove(pointerId)
@@ -389,6 +389,27 @@ internal class MobileTouchControls(private val touchSlop: Float) {
             }
             MotionEvent.ACTION_CANCEL -> releaseAll()
         }
+    }
+
+    private fun beginStick(pointerId: Int, position: Offset) {
+        stickId = pointerId
+        stickAnchor = position
+    }
+
+    // Buttons act on touch-down like a game pad. Jump stays held so the character keeps rising while swimming or
+    // flying; the other shortcuts are single presses of their add-on bindings.
+    private fun pressShortcut(pointerId: Int, shortcut: MobileShortcut) {
+        if (shortcutPointers.containsValue(shortcut)) return
+        shortcutPointers[pointerId] = shortcut
+        pressedShortcuts = pressedShortcuts + shortcut
+        touchpad?.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+        if (shortcut.held) server?.injectKeyPress(shortcut.key, 0, false) else tap(shortcut.key, shortcut.modified)
+    }
+
+    private fun releaseShortcut(pointerId: Int) {
+        val shortcut = shortcutPointers.remove(pointerId) ?: return
+        pressedShortcuts = pressedShortcuts - shortcut
+        if (shortcut.held) server?.injectKeyRelease(shortcut.key)
     }
 
     private fun moveStick(position: Offset, radius: Float) {
@@ -481,14 +502,38 @@ internal fun movementKeys(x: Float, y: Float, previous: Int = 0): Int {
     return keys
 }
 
-internal enum class MobileShortcut(val key: XKeycode, val element: MobileHudElement, val modified: Boolean = true) {
-    Jump(XKeycode.KEY_SPACE, MobileHudElement.Jump, false),
+internal enum class MobileShortcut(
+    val key: XKeycode,
+    val element: MobileHudElement,
+    val modified: Boolean = true,
+    val held: Boolean = false,
+) {
+    Jump(XKeycode.KEY_SPACE, MobileHudElement.Jump, modified = false, held = true),
     Target(XKeycode.KEY_F12, MobileHudElement.Target),
     Interact(XKeycode.KEY_F10, MobileHudElement.Interact),
 }
 
-internal data class MobileLayout(val stick: Rect, val camera: Rect, val shortcuts: Map<MobileShortcut, Rect>) {
+internal data class MobileLayout(
+    val stick: Rect,
+    val camera: Rect,
+    val shortcuts: Map<MobileShortcut, Rect>,
+    /** Where a touch starts the stick. Camera and shortcut bounds inside it keep their own touches. */
+    val stickZone: Rect = stick,
+) {
     fun shortcutAt(position: Offset) = shortcuts.entries.firstOrNull { it.value.contains(position) }?.key
+
+    /** Widens the stick's touch area toward the screen edges and the middle, but not up into the left skill arc. */
+    fun withStickZone(safeArea: Rect): MobileLayout {
+        if (safeArea.isEmpty || stick.isEmpty) return copy(stickZone = stick)
+        val reach = stick.width * STICK_ZONE_REACH
+        val zone = Rect(
+            maxOf(safeArea.left, stick.left - reach),
+            maxOf(safeArea.top, stick.top - stick.height * STICK_ZONE_RISE),
+            minOf(safeArea.right, stick.right + reach),
+            minOf(safeArea.bottom, stick.bottom + reach),
+        )
+        return copy(stickZone = zone)
+    }
 
     companion object {
         fun fit(
@@ -507,7 +552,7 @@ internal data class MobileLayout(val stick: Rect, val camera: Rect, val shortcut
             } else {
                 forPhone(safeArea)
             }
-            if (positions.isEmpty()) return defaults
+            if (positions.isEmpty()) return defaults.withStickZone(safeArea)
 
             fun place(element: MobileHudElement, bounds: Rect) =
                 safeArea.placeMobileHudElement(bounds, positions[element])
@@ -516,7 +561,7 @@ internal data class MobileLayout(val stick: Rect, val camera: Rect, val shortcut
                 stick = place(MobileHudElement.Movement, defaults.stick),
                 camera = place(MobileHudElement.Camera, defaults.camera),
                 shortcuts = defaults.shortcuts.mapValues { (shortcut, bounds) -> place(shortcut.element, bounds) },
-            )
+            ).withStickZone(safeArea)
         }
 
         private fun forPhone(safeArea: Rect): MobileLayout {
@@ -572,6 +617,9 @@ internal data class MobileLayout(val stick: Rect, val camera: Rect, val shortcut
         }
     }
 }
+
+private const val STICK_ZONE_REACH = .5f
+private const val STICK_ZONE_RISE = .08f
 
 private fun MotionEvent.position(index: Int) = Offset(getX(index), getY(index))
 
